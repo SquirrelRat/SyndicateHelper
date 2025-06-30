@@ -2,16 +2,14 @@ using System.Collections.Generic;
 
 namespace SyndicateHelper
 {
-    // --- SHARED DATA DEFINITIONS ---
-    // By placing these here, they are available to all other files in the SyndicateHelper namespace.
-
+    
     public enum SyndicateDivision { None, Transportation, Fortification, Research, Intervention }
     public enum RewardTier { Great, Good, Average, Worst }
     public class RewardInfo { public string Text { get; set; } public RewardTier Tier { get; set; } }
     public class SyndicateMemberState { public string Name { get; set; } public string Rank { get; set; } public SyndicateDivision Division { get; set; } public bool IsLeader { get; set; } }
     public struct MemberGoal { public SyndicateDivision Division; public bool IsPrimaryLeader; }
 
-    // --- REWARD DATA ---
+    
     public static class SyndicateRewardData
     {
         public static readonly Dictionary<string, Dictionary<SyndicateDivision, RewardInfo>> Rewards = new()

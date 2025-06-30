@@ -14,12 +14,12 @@ using System.Numerics;
 
 namespace SyndicateHelper
 {
-    // This class is more tightly coupled to UI elements, so it stays in the main file.
     public class SyndicateDecision { public string MemberName { get; set; } public Element InterrogateButton { get; set; } public Element ReleaseButton { get; set; } public Element SpecialButton { get; set; } public string InterrogateText { get; set; } public string SpecialText { get; set; } }
 
     public class SyndicateHelper : BaseSettingsPlugin<SyndicateHelperSettings>
     {
         private readonly List<Tuple<RectangleF, Color>> _rectanglesToDraw = new();
+        private readonly List<Tuple<RectangleF, RectangleF, Color>> _linksToDraw = new();
         private readonly List<Tuple<string, Color>> _strategicGoals = new List<Tuple<string, Color>>();
         private string _currentStrategy = "";
         private readonly List<string> _debugMessages = new List<string>();
@@ -36,6 +36,7 @@ namespace SyndicateHelper
         public override Job Tick()
         {
             _rectanglesToDraw.Clear();
+            _linksToDraw.Clear();
             _debugMessages.Clear();
             _strategicGoals.Clear();
 
@@ -49,14 +50,12 @@ namespace SyndicateHelper
 
             var betrayalWindow = GameController.IngameState.IngameUi.BetrayalWindow as SyndicatePanel;
             if (betrayalWindow == null || !betrayalWindow.IsVisible) return null;
-
-            AddDebug("Betrayal window is visible.");
+            
             GenerateStrategicGoals(betrayalWindow);
 
             var eventDataElement = betrayalWindow.BetrayalEventData as BetrayalEventData;
             if (eventDataElement != null && eventDataElement.IsVisible)
             {
-                AddDebug("EventData found, processing choices...");
                 ProcessEncounterChoices(betrayalWindow);
             }
 
@@ -69,7 +68,7 @@ namespace SyndicateHelper
 
             foreach (var rect in _rectanglesToDraw)
             {
-                Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness);
+                Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value);
             }
 
             var betrayalWindow = GameController.IngameState.IngameUi.BetrayalWindow as SyndicatePanel;
@@ -77,6 +76,13 @@ namespace SyndicateHelper
             {
                 ProcessBoardOverlays(betrayalWindow);
                 RenderStrategyAdvisor(betrayalWindow);
+            }
+
+            foreach (var link in _linksToDraw)
+            {
+                var goalCenter = new System.Numerics.Vector2(link.Item1.Center.X, link.Item1.Center.Y);
+                var buttonCenter = new System.Numerics.Vector2(link.Item2.Center.X, link.Item2.Center.Y);
+                Graphics.DrawLine(goalCenter, buttonCenter, Settings.FrameThickness.Value, link.Item3);
             }
 
             if (Settings.EnableDebugDrawing.Value)
@@ -91,55 +97,84 @@ namespace SyndicateHelper
             }
         }
         
+        private void RenderStrategyAdvisor(SyndicatePanel betrayalWindow)
+        {
+            var drawPos = new System.Numerics.Vector2(100, 150);
+            Graphics.DrawText("Strategy Advisor:", drawPos, Color.White, 18);
+            drawPos.Y += 25;
+
+            var decision = (betrayalWindow.BetrayalEventData as BetrayalEventData)?.IsVisible == true
+                ? ParseDecision(betrayalWindow.BetrayalEventData as BetrayalEventData)
+                : null;
+            
+            var boardState = ParseBoardState(betrayalWindow);
+
+            foreach (var goal in _strategicGoals)
+            {
+                var goalColor = goal.Item2;
+                var textSize = Graphics.MeasureText(goal.Item1);
+                var goalRect = new RectangleF(drawPos.X, drawPos.Y, textSize.X + 4, textSize.Y);
+
+                if (decision != null)
+                {
+                    bool specialCompletes = ChoiceAccomplishesGoal(decision.SpecialText, goal.Item1, decision.MemberName, boardState);
+                    bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Item1, decision.MemberName, boardState);
+
+                    if (specialCompletes)
+                    {
+                        goalColor = Settings.GoalCompletionColor.Value;
+                        var buttonRect = decision.SpecialButton.GetClientRectCache;
+                        Graphics.DrawFrame(goalRect, goalColor, Settings.FrameThickness.Value);
+                        _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(goalRect, buttonRect, goalColor));
+                    }
+                    else if (interrogateCompletes)
+                    {
+                        goalColor = Settings.GoalCompletionColor.Value;
+                        var buttonRect = decision.InterrogateButton.GetClientRectCache;
+                        Graphics.DrawFrame(goalRect, goalColor, Settings.FrameThickness.Value);
+                        _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(goalRect, buttonRect, goalColor));
+                    }
+                }
+                
+                Graphics.DrawText(goal.Item1, new System.Numerics.Vector2(drawPos.X + 2, drawPos.Y), goalColor);
+                drawPos.Y += 20;
+            }
+        }
+        
+        
+        
         private MemberGoal ParseGoal(string goal)
         {
             if (string.IsNullOrEmpty(goal) || goal == "None")
                 return new MemberGoal { Division = SyndicateDivision.None, IsPrimaryLeader = false };
-
             var isLeader = goal.Contains("(Leader)");
             var divisionName = goal.Replace(" (Leader)", "").Trim();
-
             if (Enum.TryParse(divisionName, out SyndicateDivision division))
-            {
                 return new MemberGoal { Division = division, IsPrimaryLeader = isLeader };
-            }
             return new MemberGoal { Division = SyndicateDivision.None, IsPrimaryLeader = false };
         }
 
         private void GenerateStrategicGoals(SyndicatePanel betrayalWindow)
         {
             if (betrayalWindow.SyndicateStates == null) return;
-
             var boardState = ParseBoardState(betrayalWindow);
-            
-            var allGoals = Settings.GetType().GetProperties()
-                .Where(p => p.PropertyType == typeof(ListNode) && SyndicateMemberNames.Contains(p.Name))
-                .Select(p => new { Name = p.Name, GoalString = (p.GetValue(Settings) as ListNode).Value })
+            var allGoals = SyndicateMemberNames
+                .Select(name => new { Name = name, GoalString = GetDesiredDivisionForMember(name) })
                 .ToDictionary(g => g.Name, g => ParseGoal(g.GoalString));
-                
             var targetDivisionsWithGoals = allGoals.Values
-                .Where(g => g.Division != SyndicateDivision.None)
-                .Select(g => g.Division)
-                .Distinct();
-
+                .Where(g => g.Division != SyndicateDivision.None).Select(g => g.Division).Distinct();
             foreach (var division in targetDivisionsWithGoals)
             {
                 var primaryLeaderGoal = allGoals.FirstOrDefault(g => g.Value.Division == division && g.Value.IsPrimaryLeader);
                 var currentLeader = boardState.Values.FirstOrDefault(m => m.Division == division && m.IsLeader);
-                
                 if (primaryLeaderGoal.Key != null)
                 {
                     if (currentLeader?.Name == primaryLeaderGoal.Key)
-                    {
                         _strategicGoals.Add(new Tuple<string, Color>($"{primaryLeaderGoal.Key} is leading {division}. (Optimal)", Color.LimeGreen));
-                    }
                     else
                     {
                         if (currentLeader != null)
-                        {
                             _strategicGoals.Add(new Tuple<string, Color>($"Problem: {currentLeader.Name} is blocking {primaryLeaderGoal.Key} from leading {division}.", Color.OrangeRed));
-                        }
-                        
                         if (boardState.TryGetValue(primaryLeaderGoal.Key, out var primaryState))
                         {
                              if (primaryState.Division != division)
@@ -148,71 +183,47 @@ namespace SyndicateHelper
                                 _strategicGoals.Add(new Tuple<string, Color>($"Rank up {primaryLeaderGoal.Key} to become leader of {division}", Color.LightGreen));
                         }
                         else
-                        {
                             _strategicGoals.Add(new Tuple<string, Color>($"Place {primaryLeaderGoal.Key} in {division} to become leader", Color.Yellow));
-                        }
                     }
                 }
-
                 var subordinateGoals = allGoals.Where(g => g.Value.Division == division && !g.Value.IsPrimaryLeader);
                 foreach (var subGoal in subordinateGoals)
                 {
                     if (boardState.TryGetValue(subGoal.Key, out var subState))
                     {
                         if (subState.Division != division)
-                        {
                             _strategicGoals.Add(new Tuple<string, Color>($"Move {subGoal.Key} to {division}", Color.CornflowerBlue));
-                        }
                         else if (subState.Rank != "Captain" && !(primaryLeaderGoal.Key != null && currentLeader?.Name == primaryLeaderGoal.Key))
-                        {
                             _strategicGoals.Add(new Tuple<string, Color>($"Rank up {subGoal.Key} in {division}", Color.CornflowerBlue));
-                        }
                     }
                     else
-                    {
                         _strategicGoals.Add(new Tuple<string, Color>($"Place {subGoal.Key} in {division}", Color.CornflowerBlue));
-                    }
                 }
             }
-
             if (_strategicGoals.Count == 0)
-            {
                 _strategicGoals.Add(new Tuple<string, Color>("No strategy configured or board is optimal.", Color.White));
-            }
         }
         
         private void ApplyStrategyProfile()
         {
             _targetDivisions.Clear();
             var allNodes = SyndicateMemberNames.ToDictionary(
-                name => name,
-                name => Settings.GetType().GetProperty(name)?.GetValue(Settings) as ListNode
-            );
-
-            // THE FIX IS HERE: Added .Where(n => n != null) to safely skip nulls.
-            foreach (var node in allNodes.Values.Where(n => n != null))
-            {
-                node.Value = "None";
-            }
-
+                name => name, name => Settings.GetType().GetProperty(name)?.GetValue(Settings) as ListNode);
+            foreach (var node in allNodes.Values.Where(n => n != null)) node.Value = "None";
             var strategy = new Dictionary<string, string>();
             switch (Settings.StrategyProfile.Value)
             {
                 case "Crafting Meta (Research)":
                     strategy["Aisling"] = "Research (Leader)"; strategy["Vorici"] = "Research";
-                    strategy["Hillock"] = "Fortification (Leader)";
-                    break;
+                    strategy["Hillock"] = "Fortification (Leader)"; break;
                 case "Scarab Farm (Intervention)":
                     strategy["Cameria"] = "Intervention (Leader)"; strategy["Rin"] = "Intervention";
                     strategy["Vagan"] = "Intervention"; strategy["Janus"] = "Intervention";
-                    strategy["Vorici"] = "Intervention";
-                    break;
+                    strategy["Vorici"] = "Intervention"; break;
                 case "Gamble (Currency/Div)":
                     strategy["Gravicius"] = "Transportation (Leader)"; strategy["Rin"] = "Intervention (Leader)";
-                    strategy["Riker"] = "Research";
-                    break;
+                    strategy["Riker"] = "Research"; break;
             }
-
             foreach (var set in strategy)
             {
                 if (allNodes.TryGetValue(set.Key, out var node) && node != null)
@@ -230,8 +241,6 @@ namespace SyndicateHelper
             if (betrayalWindow.SyndicateStates == null) return;
             var boardState = ParseBoardState(betrayalWindow);
             var portraitElements = FindPortraitElements(betrayalWindow);
-            AddDebug($"Portraits Found: {portraitElements.Count}");
-
             foreach (var memberState in boardState.Values)
             {
                 if (portraitElements.TryGetValue(memberState.Name, out var portraitElement) &&
@@ -242,9 +251,7 @@ namespace SyndicateHelper
                     var desiredDivision = desiredGoal.Division.ToString();
                     var rewardText = rewardInfo.Text;
                     Color textColor;
-
                     bool isTargetReward = memberState.Division.ToString() == desiredDivision && desiredDivision != "None";
-
                     if (isTargetReward) textColor = Settings.GoodChoiceColor.Value;
                     else
                     {
@@ -254,27 +261,13 @@ namespace SyndicateHelper
                             _ => Color.White
                         };
                     }
-
-                    if (rewardInfo.Tier == RewardTier.Worst && desiredDivision != "None")
+                    if (rewardInfo.Tier == RewardTier.Worst && desiredDivision != "None" && desiredDivision != memberState.Division.ToString())
                         rewardText += $" (-> {desiredDivision})";
-
                     var rect = portraitElement.GetClientRectCache;
                     var textSize = Graphics.MeasureText(rewardText);
                     var textPos = new System.Numerics.Vector2(rect.Center.X - textSize.X / 2, rect.Bottom + 2);
                     Graphics.DrawTextWithBackground(rewardText, textPos, textColor, FontAlign.Left, new Color(0, 0, 0, 220));
                 }
-            }
-        }
-        
-        private void RenderStrategyAdvisor(SyndicatePanel betrayalWindow)
-        {
-            var drawPos = new System.Numerics.Vector2(100, 150);
-            Graphics.DrawText("Strategy Advisor:", drawPos, Color.White, 18);
-            drawPos.Y += 25;
-            foreach (var goal in _strategicGoals)
-            {
-                Graphics.DrawText(goal.Item1, drawPos, goal.Item2);
-                drawPos.Y += 20;
             }
         }
 
@@ -285,36 +278,66 @@ namespace SyndicateHelper
             var currentBoardState = ParseBoardState(betrayalWindow);
             var decision = ParseDecision(eventDataElement);
             if (decision == null) return;
-
-            var interrogateColor = EvaluateChoice(decision, "Interrogate", currentBoardState, betrayalWindow);
-            var specialColor = EvaluateChoice(decision, decision.SpecialText, currentBoardState, betrayalWindow);
-
+            bool specialCompletesGoal = _strategicGoals.Any(g => ChoiceAccomplishesGoal(decision.SpecialText, g.Item1, decision.MemberName, currentBoardState));
+            bool interrogateCompletesGoal = _strategicGoals.Any(g => ChoiceAccomplishesGoal("Interrogate", g.Item1, decision.MemberName, currentBoardState));
+            var specialColor = specialCompletesGoal ? Settings.GoalCompletionColor.Value : EvaluateChoice(decision, decision.SpecialText, currentBoardState, betrayalWindow);
+            var interrogateColor = interrogateCompletesGoal ? Settings.GoalCompletionColor.Value : EvaluateChoice(decision, "Interrogate", currentBoardState, betrayalWindow);
             if (interrogateColor == Settings.BadChoiceColor.Value && specialColor == Settings.BadChoiceColor.Value && decision.ReleaseButton.IsVisible)
                 _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(decision.ReleaseButton.GetClientRectCache, Settings.GoodChoiceColor.Value));
-            else {
+            else 
+            {
                 _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(decision.InterrogateButton.GetClientRectCache, interrogateColor));
                 _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(decision.SpecialButton.GetClientRectCache, specialColor));
             }
         }
         
-        private string GetDesiredDivisionForMember(string memberName) => (string)Settings.GetType().GetProperty(memberName)?.GetValue(Settings, null).GetType().GetProperty("Value")?.GetValue(Settings.GetType().GetProperty(memberName)?.GetValue(Settings, null), null);
+        private bool ChoiceAccomplishesGoal(string choiceText, string goalText, string memberInDecision, Dictionary<string, SyndicateMemberState> boardState)
+        {
+            if (goalText.Contains("Rank up"))
+            {
+                var targetMember = goalText.Split(' ')[2];
+                return memberInDecision == targetMember && choiceText.ToLower().Contains("rank");
+            }
+            if (goalText.StartsWith("Problem:"))
+            {
+                var targetMember = goalText.Split(' ')[1];
+                return memberInDecision == targetMember && choiceText.ToLower().Contains("interrogate");
+            }
+            if (goalText.StartsWith("Move") || goalText.StartsWith("Place"))
+            {
+                var match = Regex.Match(goalText, @"(Move|Place) (.+?) to (.+?)( |to|$)");
+                if (match.Success)
+                {
+                    var targetMember = match.Groups[2].Value.Trim();
+                    var desiredDivision = match.Groups[3].Value.Trim();
+                    return choiceText.Contains(targetMember) && choiceText.Contains($"moves to {desiredDivision}");
+                }
+            }
+            return false;
+        }
+
+        private string GetDesiredDivisionForMember(string memberName)
+        {
+            var property = Settings.GetType().GetProperty(memberName);
+            if (property == null) return "None";
+            var listNode = property.GetValue(Settings) as ListNode;
+            return listNode?.Value ?? "None";
+        }
         
         private Dictionary<string, SyndicateMemberState> ParseBoardState(SyndicatePanel betrayalWindow)
         {
             var boardState = new Dictionary<string, SyndicateMemberState>();
-            if (betrayalWindow.SyndicateStates == null) return boardState;
+            if (betrayalWindow?.SyndicateStates == null) return boardState;
             var leaders = betrayalWindow.SyndicateLeadersData.Leaders.Select(l => l.Target.Name).ToHashSet();
             foreach (var memberState in betrayalWindow.SyndicateStates)
             {
                 var memberName = memberState.Target.Name;
-                var rank = memberState.Rank.Name;
-                var job = memberState.Job.Name;
                 if (string.IsNullOrWhiteSpace(memberName)) continue;
-                if (Enum.TryParse(job, out SyndicateDivision division) || job == "None")
+                if (Enum.TryParse(memberState.Job.Name, out SyndicateDivision division) || memberState.Job.Name == "None")
                 {
                     boardState[memberName] = new SyndicateMemberState {
-                        Name = memberName, Rank = rank,
-                        Division = (job == "None") ? SyndicateDivision.None : division,
+                        Name = memberName, Rank = memberState.Rank.Name,
+                        Division = (memberState.Job.Name == "None") ? SyndicateDivision.None : division,
                         IsLeader = leaders.Contains(memberName)
                     };
                 }
@@ -350,10 +373,9 @@ namespace SyndicateHelper
         
         private int GetImprisonedCount(SyndicatePanel betrayalWindow)
         {
-            var searchRoot = betrayalWindow.GetChildFromIndices(0);
-            if (searchRoot == null) return 0;
             int count = 0;
-            CountTurnsLeftRecursive(searchRoot, ref count);
+            if (betrayalWindow?.GetChildFromIndices(0) != null)
+                CountTurnsLeftRecursive(betrayalWindow.GetChildFromIndices(0), ref count);
             return count;
         }
 
@@ -369,7 +391,7 @@ namespace SyndicateHelper
         private Dictionary<string, Element> FindPortraitElements(SyndicatePanel betrayalWindow)
         {
             var foundPortraits = new Dictionary<string, Element>();
-            FindPortraitsRecursive(betrayalWindow, foundPortraits);
+            if(betrayalWindow != null) FindPortraitsRecursive(betrayalWindow, foundPortraits);
             return foundPortraits;
         }
 
