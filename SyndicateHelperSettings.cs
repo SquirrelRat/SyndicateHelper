@@ -10,33 +10,41 @@ namespace SyndicateHelper
     {
         public ToggleNode Enable { get; set; } = new ToggleNode(true);
 
-        [Menu("Debug", "Display debug information")]
+        [Menu("Debug")]
         public ToggleNode EnableDebugDrawing { get; set; } = new ToggleNode(false);
 
-        [Menu("Frame Thickness", "Thickness of the frames drawn around choices")]
+        [Menu("Frame Thickness")]
         public RangeNode<int> FrameThickness { get; set; } = new RangeNode<int>(2, 1, 10);
         
         [Menu("Colors")]
         public EmptyNode Colors { get; set; }
+        [Menu("Good Choice")] public ColorNode GoodChoiceColor { get; set; } = new ColorNode(Color.LimeGreen);
+        [Menu("Goal Completion Choice")] public ColorNode GoalCompletionColor { get; set; } = new ColorNode(new Color(157, 0, 255));
+        [Menu("Neutral Choice")] public ColorNode NeutralChoiceColor { get; set; } = new ColorNode(Color.Yellow);
+        [Menu("Bad Choice")] public ColorNode BadChoiceColor { get; set; } = new ColorNode(Color.Red);
         
-        [Menu("Good Choice", "Color for a good/recommended choice")]
-        public ColorNode GoodChoiceColor { get; set; } = new ColorNode(Color.LimeGreen);
-
-        [Menu("Goal Completion Choice", "Color for a choice that completes a strategic goal")]
-        public ColorNode GoalCompletionColor { get; set; } = new ColorNode(new Color(157, 0, 255));
-
-        [Menu("Neutral Choice", "Color for a neutral choice")]
-        public ColorNode NeutralChoiceColor { get; set; } = new ColorNode(Color.Yellow);
-
-        [Menu("Bad Choice", "Color for a bad/detrimental choice")]
-        public ColorNode BadChoiceColor { get; set; } = new ColorNode(Color.Red);
-        
-        [Menu("Strategy Profile", "Select a pre-configured strategy")]
+        [Menu("Strategy Profile")]
         public ListNode StrategyProfile { get; set; } = new ListNode();
         
-        [Menu("Member Goals", "Assign a target division for each Syndicate member. Use (Leader) to mark the primary target for a division.")]
-        public EmptyNode MemberGoals { get; set; }
+        [Menu("Action Score Weights")]
+        public EmptyNode ActionScoreWeights { get; set; }
+        [Menu("Execute", "Score for ranking up a member.")] public RangeNode<int> ExecuteScore { get; set; } = new RangeNode<int>(35, 0, 100);
+        [Menu("Promote NPC", "Score for ranking up another member.")] public RangeNode<int> PromoteNPCScore { get; set; } = new RangeNode<int>(40, 0, 100);
+        [Menu("Steal Ranks", "Base score for stealing ranks.")] public RangeNode<int> StealRanksScore { get; set; } = new RangeNode<int>(60, 0, 100);
+        [Menu("Gain Scarabs", "Score for dropping scarabs.")] public RangeNode<int> GainItemScarabScore { get; set; } = new RangeNode<int>(80, 0, 100);
+        [Menu("Gain Uniques", "Score for dropping uniques.")] public RangeNode<int> GainItemAnyUniqueScore { get; set; } = new RangeNode<int>(40, 0, 100);
+        [Menu("Gain Currency", "Score for dropping currency.")] public RangeNode<int> GainItemCurrencyScore { get; set; } = new RangeNode<int>(35, 0, 100);
+        [Menu("Make Friends/Rivals", "Score for forming a relationship.")] public RangeNode<int> NPCBefriendsAnotherScore { get; set; } = new RangeNode<int>(30, 0, 100);
+        [Menu("Gain Intelligence", "Score for gaining intelligence directly.")] public RangeNode<int> GainIntelligenceScore { get; set; } = new RangeNode<int>(15, 0, 100);
+        [Menu("Gain Large Intelligence", "Score for gaining a large amount of intelligence.")] public RangeNode<int> GainIntelligenceLargeScore { get; set; } = new RangeNode<int>(25, 0, 100);
+        [Menu("Swap Jobs", "Base score for swapping jobs.")] public RangeNode<int> SwapNPCJobScore { get; set; } = new RangeNode<int>(5, -100, 100);
+        [Menu("Swap Leader", "Base score for swapping leader.")] public RangeNode<int> SwapLeaderScore { get; set; } = new RangeNode<int>(5, -100, 100);
+        [Menu("Destroy Items", "Score for destroying items. Should be negative.")] public RangeNode<int> DestroyItemsScore { get; set; } = new RangeNode<int>(-50, -100, 0);
+        [Menu("Remove Rivalries", "Score for removing rivalries. Should be negative.")] public RangeNode<int> RemoveRivalriesScore { get; set; } = new RangeNode<int>(-75, -100, 0);
+        [Menu("Remove From Prison", "Score for removing all from prison. Should be negative.")] public RangeNode<int> RemoveFromPrisonScore { get; set; } = new RangeNode<int>(-80, -100, 0);
         
+        [Menu("Member Goals")]
+        public EmptyNode MemberGoals { get; set; }
         [Menu("Aisling")] public ListNode Aisling { get; set; } = new ListNode();
         [Menu("Cameria")] public ListNode Cameria { get; set; } = new ListNode();
         [Menu("Elreon")] public ListNode Elreon { get; set; } = new ListNode();
@@ -58,28 +66,22 @@ namespace SyndicateHelper
         public SyndicateHelperSettings()
         {
             var goalOptions = new List<string> {
-                "None",
-                "Transportation", "Transportation (Leader)",
-                "Fortification", "Fortification (Leader)",
-                "Research", "Research (Leader)",
-                "Intervention", "Intervention (Leader)"
+                "None", "Transportation", "Transportation (Leader)", "Fortification", "Fortification (Leader)",
+                "Research", "Research (Leader)", "Intervention", "Intervention (Leader)"
             };
-
+            
             var profileOptions = new List<string> {
-                "Custom",
-                "Crafting Meta (Research)",
-                "Scarab Farm (Intervention)",
-                "Gamble (Currency/Div)"
+                "Custom", "Comprehensive Scarab Farm", "Crafting Meta (Research)", "Gamble (Currency/Div)",
+                "Delve Deeper", "Einhar's Menagerie", "The Atlas Grind"
             };
             StrategyProfile.Values = profileOptions;
-            StrategyProfile.Value = "Scarab Farm (Intervention)";
-
-            Aisling.Values = goalOptions; Cameria.Values = goalOptions; Elreon.Values = goalOptions;
-            Gravicius.Values = goalOptions; Guff.Values = goalOptions; Haku.Values = goalOptions;
-            Hillock.Values = goalOptions; ItThatFled.Values = goalOptions; Janus.Values = goalOptions;
-            Jorgin.Values = goalOptions; Korell.Values = goalOptions; Leo.Values = goalOptions;
-            Rin.Values = goalOptions; Riker.Values = goalOptions; Tora.Values = goalOptions;
-            Vagan.Values = goalOptions; Vorici.Values = goalOptions;
+            StrategyProfile.Value = "Comprehensive Scarab Farm";
+            
+            var members = new[] {
+                Aisling, Cameria, Elreon, Gravicius, Guff, Haku, Hillock, ItThatFled, Janus, Jorgin,
+                Korell, Leo, Rin, Riker, Tora, Vagan, Vorici
+            };
+            foreach (var member in members) member.Values = goalOptions;
         }
     }
 }
