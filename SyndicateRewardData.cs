@@ -6,7 +6,7 @@ namespace SyndicateHelper
     public enum SyndicateDivision { None, Transportation, Fortification, Research, Intervention }
     public enum RewardTier { Great, Good, Average, Worst }
     public class RewardInfo { public string Text { get; set; } public RewardTier Tier { get; set; } }
-    public class SyndicateMemberState { public string Name { get; set; } public string Rank { get; set; } public SyndicateDivision Division { get; set; } public bool IsLeader { get; set; } }
+    public class SyndicateMemberState { public string Name { get; set; } public string Rank { get; set; } public SyndicateDivision Division { get; set; } public bool IsLeader { get; set; } public HashSet<string> Friends { get; set; } = new HashSet<string>(); public HashSet<string> Rivals { get; set; } = new HashSet<string>(); }
     public struct MemberGoal { public SyndicateDivision Division; public bool IsPrimaryLeader; }
 
     

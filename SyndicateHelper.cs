@@ -33,6 +33,14 @@ namespace SyndicateHelper
 
     public class SyndicateHelper : BaseSettingsPlugin<SyndicateHelperSettings>
     {
+        private class CachedText
+        {
+            public string Text { get; set; }
+            public System.Numerics.Vector2 Size { get; set; }
+            public System.Numerics.Vector2 Position { get; set; }
+            public Color Color { get; set; }
+        }
+
         private readonly List<Tuple<RectangleF, Color>> _rectanglesToDraw = new();
         private readonly List<Tuple<RectangleF, RectangleF, Color>> _linksToDraw = new();
         private readonly List<StrategicGoal> _strategicGoals = new List<StrategicGoal>();
@@ -47,6 +55,9 @@ namespace SyndicateHelper
         private List<EvaluatedChoice> _lastChoices = new List<EvaluatedChoice>();
         private SyndicateDecision _lastDecision = null;
 
+        private readonly List<CachedText> _cachedChoiceScores = new List<CachedText>();
+        private readonly List<CachedText> _cachedRewardText = new List<CachedText>();
+
         private static readonly List<string> SyndicateMemberNames = new List<string> { "Aisling", "Cameria", "Elreon", "Gravicius", "Guff", "Haku", "Hillock", "It That Fled", "Janus", "Jorgin", "Korell", "Leo", "Rin", "Riker", "Tora", "Vagan", "Vorici" };
 
         public override bool Initialise()
@@ -60,9 +71,11 @@ namespace SyndicateHelper
             _linksToDraw.Clear();
             _debugMessages.Clear();
             _strategicGoals.Clear();
+            _rectanglesToDraw.Clear();
+            _cachedChoiceScores.Clear();
+            _cachedRewardText.Clear();
 
-            if (!CanRun())
-            {
+            if (!CanRun()) {
                 _lastDecision = null;
                 return null;
             }
@@ -90,7 +103,10 @@ namespace SyndicateHelper
             if (_lastDecision != null)
             {
                 ProcessEncounterChoices(eventDataElement);
+                ProcessChoiceHighlights();
             }
+
+            ProcessBoardOverlays(betrayalWindow);
 
             return null;
         }
@@ -98,16 +114,11 @@ namespace SyndicateHelper
         public override void Render()
         {
             if (!CanRun()) return;
-            
-            _rectanglesToDraw.Clear();
-            
+
             var betrayalWindow = GameController.IngameState.IngameUi.BetrayalWindow as SyndicatePanel;
-            if (betrayalWindow != null && betrayalWindow.IsVisible)
-            {
-                ProcessBoardOverlays(betrayalWindow);
-                RenderStrategyAdvisor(betrayalWindow);
-                RenderChoiceHighlights(); 
-            }
+            if (betrayalWindow == null || !betrayalWindow.IsVisible) return;
+
+            RenderStrategyAdvisor(betrayalWindow);
 
             foreach (var rect in _rectanglesToDraw) { Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value); }
             foreach (var link in _linksToDraw)
@@ -116,6 +127,17 @@ namespace SyndicateHelper
                 var buttonCenter = new System.Numerics.Vector2(link.Item2.Center.X, link.Item2.Center.Y);
                 Graphics.DrawLine(goalCenter, buttonCenter, Settings.FrameThickness.Value, link.Item3);
             }
+
+            foreach (var cachedText in _cachedRewardText)
+            {
+                Graphics.DrawTextWithBackground(cachedText.Text, cachedText.Position, cachedText.Color, FontAlign.Left, new Color(0, 0, 0, 220));
+            }
+
+            foreach (var cachedText in _cachedChoiceScores)
+            {
+                Graphics.DrawText(cachedText.Text, cachedText.Position, cachedText.Color);
+            }
+
             if (Settings.EnableDebugDrawing.Value)
             {
                 var y = 300f;
@@ -149,12 +171,12 @@ namespace SyndicateHelper
             foreach(var choice in _lastChoices) { AddDebug($"Choice: {choice.Name}, Score: {choice.Score}"); }
         }
         
-        private void RenderChoiceHighlights()
+        private void ProcessChoiceHighlights()
         {
             if (_lastDecision == null || _lastChoices.Count == 0) return;
-            
+
             var highlightedButtonAddresses = new HashSet<long>();
-            
+
             var drawPosY = 175f;
             foreach (var goal in _strategicGoals.OrderBy(g => g.Priority))
             {
@@ -164,17 +186,17 @@ namespace SyndicateHelper
 
                 bool specialCompletes = ChoiceAccomplishesGoal(_lastDecision.SpecialText, goal.Text, _lastDecision.MemberName, _boardState);
                 bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Text, _lastDecision.MemberName, _boardState);
-                
+
                 var buttonToHighlight = specialCompletes ? _lastDecision.SpecialButton : (interrogateCompletes ? _lastDecision.InterrogateButton : null);
 
-                if(buttonToHighlight != null && buttonToHighlight.IsVisible)
+                if (buttonToHighlight != null && buttonToHighlight.IsVisible)
                 {
                     _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(goalRect, Settings.GoalCompletionColor.Value));
                     _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonToHighlight.GetClientRectCache, Settings.GoalCompletionColor.Value));
                     highlightedButtonAddresses.Add(buttonToHighlight.Address);
                 }
             }
-            
+
             var bestChoice = _lastChoices.OrderByDescending(c => c.Score).First();
 
             foreach (var choice in _lastChoices)
@@ -182,14 +204,16 @@ namespace SyndicateHelper
                 var buttonRect = choice.Button?.GetClientRectCache ?? RectangleF.Empty;
                 if (buttonRect == RectangleF.Empty) continue;
 
-                var scoreColor = highlightedButtonAddresses.Contains(choice.Button.Address) ? Settings.GoalCompletionColor.Value : 
-                                 choice.Score > 0 ? Settings.GoodChoiceColor.Value : 
+                var scoreColor = highlightedButtonAddresses.Contains(choice.Button.Address) ? Settings.GoalCompletionColor.Value :
+                                 choice.Score > 0 ? Settings.GoodChoiceColor.Value :
                                  choice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
-                
+
                 var scoreText = $"[{choice.Score}]";
-                var textPos = new System.Numerics.Vector2(buttonRect.Right + 5, buttonRect.Center.Y - Graphics.MeasureText(scoreText).Y / 2);
-                Graphics.DrawText(scoreText, textPos, scoreColor);
-                
+                var textSize = Graphics.MeasureText(scoreText);
+                var textPos = new System.Numerics.Vector2(buttonRect.Right + 5, buttonRect.Center.Y - textSize.Y / 2 - 5); // Adjusted Y position
+
+                _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = scoreColor });
+
                 if (highlightedButtonAddresses.Contains(choice.Button.Address)) continue;
 
                 if (choice.Score == bestChoice.Score)
@@ -202,13 +226,15 @@ namespace SyndicateHelper
                 }
             }
         }
+
+
         
         private void UpdateBoardAndPrisonState(SyndicatePanel betrayalWindow)
         {
             var newBoardState = new Dictionary<string, SyndicateMemberState>();
             var prisonCount = 0;
             if (betrayalWindow?.SyndicateStates == null) return;
-            var leaders = betrayalWindow.SyndicateLeadersData.Leaders.Select(l => l.Target.Name).ToHashSet();
+            var leaders = betrayalWindow.SyndicateLeadersData.Leaders.Where(l => l.Target != null).Select(l => l.Target.Name).ToHashSet();
             foreach (var memberState in betrayalWindow.SyndicateStates)
             {
                 var memberName = memberState.Target.Name;
@@ -222,6 +248,34 @@ namespace SyndicateHelper
             }
             _boardState = newBoardState;
             _imprisonedMemberCount = prisonCount;
+
+            // Process relationships
+            var relationshipElements = FindRelationshipElements(betrayalWindow);
+            foreach (var relElement in relationshipElements)
+            {
+                var text = relElement.Text;
+                var match = Regex.Match(text, "(.+?) (is friends with|is rivals with) (.+)");
+                if (match.Success)
+                {
+                    var member1Name = match.Groups[1].Value.Trim();
+                    var relationshipType = match.Groups[2].Value.Trim();
+                    var member2Name = match.Groups[3].Value.Trim();
+
+                    if (newBoardState.TryGetValue(member1Name, out var member1State) && newBoardState.TryGetValue(member2Name, out var member2State))
+                    {
+                        if (relationshipType == "is friends with")
+                        {
+                            member1State.Friends.Add(member2Name);
+                            member2State.Friends.Add(member1Name);
+                        }
+                        else if (relationshipType == "is rivals with")
+                        {
+                            member1State.Rivals.Add(member2Name);
+                            member2State.Rivals.Add(member1Name);
+                        }
+                    }
+                }
+            }
         }
 
         private bool IsMemberImprisoned(Element element)
@@ -352,6 +406,15 @@ namespace SyndicateHelper
                     if(allMemberNodes.TryGetValue("Vorici", out var voriciNode) && voriciNode != null) voriciNode.Value = "Research";
                     if(allMemberNodes.TryGetValue("Hillock", out var hillockNode) && hillockNode != null) hillockNode.Value = "Fortification (Leader)";
                     break;
+                case "Relationship-Based":
+                    Settings.OpposedDivisions.Value = "Transportation-Research,Fortification-Intervention";
+                    Settings.AlliedDivisions.Value = "Fortification-Transportation,Fortification-Research,Intervention-Transportation,Intervention-Research";
+                    if(allMemberNodes.TryGetValue("Gravicius", out var gravNode) && gravNode != null) gravNode.Value = "Transportation";
+                    if(allMemberNodes.TryGetValue("Rin", out var rinNode) && rinNode != null) rinNode.Value = "Transportation";
+                    if(allMemberNodes.TryGetValue("Janus", out var janusNode) && janusNode != null) janusNode.Value = "Research";
+                    if(allMemberNodes.TryGetValue("Guff", out var guffNode) && guffNode != null) guffNode.Value = "Research";
+                    if(allMemberNodes.TryGetValue("Hillock", out var hillockNode2) && hillockNode2 != null) hillockNode2.Value = "Fortification";
+                    break;
             }
 
             _targetDivisions.Clear();
@@ -406,7 +469,7 @@ namespace SyndicateHelper
                     var rect = portraitElement.GetClientRectCache;
                     var textSize = Graphics.MeasureText(rewardText);
                     var textPos = new System.Numerics.Vector2(rect.Center.X - textSize.X / 2, rect.Bottom + 2);
-                    Graphics.DrawTextWithBackground(rewardText, textPos, textColor, FontAlign.Left, new Color(0, 0, 0, 220));
+                    _cachedRewardText.Add(new CachedText { Text = rewardText, Position = textPos, Color = textColor });
                 }
             }
         }
@@ -495,5 +558,27 @@ namespace SyndicateHelper
         }
         
         private bool CanRun() => Settings.Enable.Value && !GameController.IsLoading && GameController.IngameState.InGame;
+
+        private List<Element> FindRelationshipElements(SyndicatePanel betrayalWindow)
+        {
+            var relationshipElements = new List<Element>();
+            if (betrayalWindow != null) FindRelationshipElementsRecursive(betrayalWindow, relationshipElements);
+            return relationshipElements;
+        }
+
+        private void FindRelationshipElementsRecursive(Element currentElement, List<Element> relationshipElements)
+        {
+            if (currentElement == null) return;
+
+            if (currentElement.Text != null && (currentElement.Text.Contains("is friends with") || currentElement.Text.Contains("is rivals with")))
+            {
+                relationshipElements.Add(currentElement);
+            }
+
+            foreach (var child in currentElement.Children)
+            {
+                FindRelationshipElementsRecursive(child, relationshipElements);
+            }
+        }
     }
 }

@@ -42,6 +42,15 @@ namespace SyndicateHelper
         [Menu("Destroy Items", "Score for destroying items. Should be negative.")] public RangeNode<int> DestroyItemsScore { get; set; } = new RangeNode<int>(-50, -100, 0);
         [Menu("Remove Rivalries", "Score for removing rivalries. Should be negative.")] public RangeNode<int> RemoveRivalriesScore { get; set; } = new RangeNode<int>(-75, -100, 0);
         [Menu("Remove From Prison", "Score for removing all from prison. Should be negative.")] public RangeNode<int> RemoveFromPrisonScore { get; set; } = new RangeNode<int>(-80, -100, 0);
+
+        [Menu("Relationship Strategy Settings")]
+        public EmptyNode RelationshipStrategySettings { get; set; }
+        [Menu("Opposed Divisions", "Comma-separated pairs of divisions that should NOT have relationships, e.g., 'Transportation-Research,Fortification-Intervention'")]
+        public TextNode OpposedDivisions { get; set; } = new TextNode("");
+        [Menu("Allied Divisions", "Comma-separated pairs of divisions that SHOULD have relationships, e.g., 'Fortification-Transportation,Intervention-Research'")]
+        public TextNode AlliedDivisions { get; set; } = new TextNode("");
+        [Menu("Relationship Score Modifier", "Score multiplier for choices that affect relationships.")]
+        public RangeNode<int> RelationshipScoreModifier { get; set; } = new RangeNode<int>(50, 0, 100);
         
         [Menu("Member Goals")]
         public EmptyNode MemberGoals { get; set; }
@@ -72,7 +81,7 @@ namespace SyndicateHelper
             
             var profileOptions = new List<string> {
                 "Custom", "Comprehensive Scarab Farm", "Crafting Meta (Research)", "Gamble (Currency/Div)",
-                "Delve Deeper", "Einhar's Menagerie", "The Atlas Grind"
+                "Delve Deeper", "Einhar's Menagerie", "The Atlas Grind", "Relationship-Based"
             };
             StrategyProfile.Values = profileOptions;
             StrategyProfile.Value = "Comprehensive Scarab Farm";
@@ -81,7 +90,13 @@ namespace SyndicateHelper
                 Aisling, Cameria, Elreon, Gravicius, Guff, Haku, Hillock, ItThatFled, Janus, Jorgin,
                 Korell, Leo, Rin, Riker, Tora, Vagan, Vorici
             };
-            foreach (var member in members) member.Values = goalOptions;
+            foreach (var member in members)
+            {
+                if (member.Values == null || member.Values.Count == 0)
+                {
+                    member.Values = goalOptions;
+                }
+            }
         }
     }
 }
