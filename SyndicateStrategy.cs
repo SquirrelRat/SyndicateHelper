@@ -152,6 +152,8 @@ namespace SyndicateHelper
         #endregion
 
         #region Utility methods
+
+
         private MemberGoal ParseGoal(string goal)
         {
             if (string.IsNullOrEmpty(goal) || goal == "None")

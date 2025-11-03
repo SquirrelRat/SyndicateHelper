@@ -23,6 +23,7 @@ namespace SyndicateHelper
         [Menu("Goal Completion Choice")] public ColorNode GoalCompletionColor { get; set; } = new ColorNode(new Color(157, 0, 255));
         [Menu("Neutral Choice")] public ColorNode NeutralChoiceColor { get; set; } = new ColorNode(Color.Yellow);
         [Menu("Bad Choice")] public ColorNode BadChoiceColor { get; set; } = new ColorNode(Color.Red);
+        [Menu("Background Alpha")] public RangeNode<int> BackgroundAlpha { get; set; } = new RangeNode<int>(166, 0, 255);
         
         [Menu("Strategy Profile")]
         public ListNode StrategyProfile { get; set; } = new ListNode();

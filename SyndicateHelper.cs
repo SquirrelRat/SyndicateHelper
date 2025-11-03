@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Numerics;
+using System.Windows.Forms;
 
 namespace SyndicateHelper
 {
@@ -57,7 +58,32 @@ namespace SyndicateHelper
         private readonly List<CachedText> _cachedChoiceScores = new List<CachedText>();
         private readonly List<CachedText> _cachedRewardText = new List<CachedText>();
 
+        private RectangleF _leftButtonRect;
+        private RectangleF _rightButtonRect;
+        private DateTime _lastClickTime = DateTime.MinValue;
+        private bool _isBoardStateDirty = true;
+
         private static readonly List<string> SyndicateMemberNames = new List<string> { "Aisling", "Cameria", "Elreon", "Gravicius", "Guff", "Haku", "Hillock", "It That Fled", "Janus", "Jorgin", "Korell", "Leo", "Rin", "Riker", "Tora", "Vagan", "Vorici" };
+
+        private void CycleStrategy(int direction)
+        {
+            var strategyNames = SyndicateStrategies.Strategies.Select(s => s.Name).ToList();
+            if (strategyNames.Count == 0) return;
+
+            var currentStrategyName = Settings.StrategyProfile.Value;
+            var currentIndex = strategyNames.IndexOf(currentStrategyName);
+
+            if (currentIndex == -1)
+            {
+                Settings.StrategyProfile.Value = strategyNames[0];
+                _isBoardStateDirty = true;
+                return;
+            }
+
+            var newIndex = (currentIndex + direction + strategyNames.Count) % strategyNames.Count;
+            Settings.StrategyProfile.Value = strategyNames[newIndex];
+            _isBoardStateDirty = true;
+        }
 
         public override bool Initialise()
         {
@@ -67,13 +93,6 @@ namespace SyndicateHelper
 
         public override Job Tick()
         {
-            _linksToDraw.Clear();
-            _debugMessages.Clear();
-            _strategicGoals.Clear();
-            _rectanglesToDraw.Clear();
-            _cachedChoiceScores.Clear();
-            _cachedRewardText.Clear();
-
             if (!CanRun()) {
                 _lastDecision = null;
                 return null;
@@ -83,13 +102,27 @@ namespace SyndicateHelper
             if (betrayalWindow == null || !betrayalWindow.IsVisible)
             {
                 _lastDecision = null;
+                _isBoardStateDirty = true;
                 return null;
             }
-            
-            UpdateBoardAndPrisonState(betrayalWindow);
-            GenerateStrategicGoals(betrayalWindow);
-            var currentStrategy = SyndicateStrategies.Strategies.FirstOrDefault(s => s.Name == Settings.StrategyProfile.Value);
-            _strategyEvaluator = new SyndicateStrategy(Settings, _boardState, _imprisonedMemberCount, currentStrategy);
+
+
+            _linksToDraw.Clear();
+            _debugMessages.Clear();
+            _rectanglesToDraw.Clear();
+            _cachedChoiceScores.Clear();
+            _cachedRewardText.Clear();
+
+            if (_isBoardStateDirty)
+            {
+                UpdateBoardAndPrisonState(betrayalWindow);
+                var currentStrategy = SyndicateStrategies.Strategies.FirstOrDefault(s => s.Name == Settings.StrategyProfile.Value);
+                _strategyEvaluator = new SyndicateStrategy(Settings, _boardState, _imprisonedMemberCount, currentStrategy);
+
+                _strategicGoals.Clear();
+                GenerateStrategicGoals(betrayalWindow);
+                _isBoardStateDirty = false;
+            }
 
             var eventDataElement = betrayalWindow.BetrayalEventData as BetrayalEventData;
             _lastDecision = eventDataElement != null && eventDataElement.IsVisible ? ParseDecision(eventDataElement) : null;
@@ -102,6 +135,22 @@ namespace SyndicateHelper
 
             ProcessBoardOverlays(betrayalWindow);
 
+
+            if (Input.IsKeyDown(Keys.LButton) && (DateTime.Now - _lastClickTime).TotalMilliseconds > 200)
+            {
+                var mousePos = new SharpDX.Vector2(GameController.IngameState.MousePosX, GameController.IngameState.MousePosY);
+                if (_leftButtonRect.Contains(mousePos))
+                {
+                    CycleStrategy(-1);
+                    _lastClickTime = DateTime.Now;
+                }
+                else if (_rightButtonRect.Contains(mousePos))
+                {
+                    CycleStrategy(1);
+                    _lastClickTime = DateTime.Now;
+                }
+            }
+
             return null;
         }
 
@@ -112,7 +161,8 @@ namespace SyndicateHelper
             var betrayalWindow = GameController.IngameState.IngameUi.BetrayalWindow as SyndicatePanel;
             if (betrayalWindow == null || !betrayalWindow.IsVisible) return;
 
-            RenderStrategyAdvisor(betrayalWindow);
+            var backgroundColor = new Color((byte)0, (byte)0, (byte)0, (byte)Settings.BackgroundAlpha.Value);
+            var advisorBottomY = RenderStrategyAdvisor(betrayalWindow, backgroundColor);
 
             foreach (var rect in _rectanglesToDraw) { Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value); }
             foreach (var link in _linksToDraw)
@@ -124,24 +174,23 @@ namespace SyndicateHelper
 
             foreach (var cachedText in _cachedRewardText)
             {
-                Graphics.DrawTextWithBackground(cachedText.Text, cachedText.Position, cachedText.Color, FontAlign.Left, new Color(0, 0, 0, 220));
+                Graphics.DrawTextWithBackground(cachedText.Text, cachedText.Position, cachedText.Color, FontAlign.Left, backgroundColor);
             }
 
             foreach (var cachedText in _cachedChoiceScores)
             {
-                Graphics.DrawText(cachedText.Text, cachedText.Position, cachedText.Color);
+                Graphics.DrawTextWithBackground(cachedText.Text, cachedText.Position, cachedText.Color, FontAlign.Left, backgroundColor);
             }
 
             if (Settings.EnableDebugDrawing.Value)
             {
-                var y = 300f;
+                var y = advisorBottomY + 20;
                 var a = new System.Numerics.Vector2(100, y);
-                a.Y += 20;
-                Graphics.DrawText($"Prison: {_imprisonedMemberCount}/3 slots filled.", a, Color.White);
+                Graphics.DrawTextWithBackground($"Prison: {_imprisonedMemberCount}/3 slots filled.", a, Color.White, FontAlign.Left, backgroundColor);
                 a.Y += 20;
                 foreach (var msg in _debugMessages)
                 {
-                    Graphics.DrawText(msg, a, Color.White);
+                    Graphics.DrawTextWithBackground(msg, a, Color.White, FontAlign.Left, backgroundColor);
                     a.Y += 20;
                 }
             }
@@ -191,7 +240,8 @@ namespace SyndicateHelper
                 }
             }
 
-            var bestChoice = _lastChoices.OrderByDescending(c => c.Score).First();
+            var bestChoice = _lastChoices.OrderByDescending(c => c.Score).FirstOrDefault();
+            if (bestChoice.Button == null) return;
 
             foreach (var choice in _lastChoices)
             {
@@ -204,7 +254,7 @@ namespace SyndicateHelper
 
                 var scoreText = $"[{choice.Score}]";
                 var textSize = Graphics.MeasureText(scoreText);
-                var textPos = new System.Numerics.Vector2(buttonRect.Right + 5, buttonRect.Center.Y - textSize.Y / 2 - 5); // Adjusted Y position
+                var textPos = new System.Numerics.Vector2(buttonRect.Right + 5, buttonRect.Center.Y - textSize.Y / 2 - 5);
 
                 _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = scoreColor });
 
@@ -243,7 +293,7 @@ namespace SyndicateHelper
             _boardState = newBoardState;
             _imprisonedMemberCount = prisonCount;
 
-            // Process relationships
+
             var relationshipElements = FindRelationshipElements(betrayalWindow);
             foreach (var relElement in relationshipElements)
             {
@@ -280,10 +330,33 @@ namespace SyndicateHelper
             return false;
         }
         
-        private void RenderStrategyAdvisor(SyndicatePanel betrayalWindow)
+        private float RenderStrategyAdvisor(SyndicatePanel betrayalWindow, Color backgroundColor)
         {
-            var drawPos = new System.Numerics.Vector2(100, 150);
-            Graphics.DrawText("Strategy Advisor:", drawPos, Color.White, 18);
+            var drawPos = new System.Numerics.Vector2(100, 100);
+
+
+            var leftButtonText = "<-";
+            var leftButtonSize = Graphics.MeasureText(leftButtonText, 20);
+            _leftButtonRect = new RectangleF(drawPos.X, drawPos.Y, leftButtonSize.X + 10, leftButtonSize.Y + 5);
+            Graphics.DrawBox(_leftButtonRect, new Color(0, 0, 0, 150));
+            Graphics.DrawTextWithBackground(leftButtonText, new System.Numerics.Vector2(drawPos.X + 5, drawPos.Y), Color.White, FontAlign.Left, backgroundColor);
+
+
+            var strategyName = Settings.StrategyProfile.Value;
+            var strategyNameSize = Graphics.MeasureText(strategyName, 20);
+            var strategyNamePos = new System.Numerics.Vector2(_leftButtonRect.Right + 10, drawPos.Y);
+            Graphics.DrawTextWithBackground(strategyName, strategyNamePos, Color.Orange, FontAlign.Left, backgroundColor);
+
+
+            var rightButtonText = "->";
+            var rightButtonSize = Graphics.MeasureText(rightButtonText, 20);
+            _rightButtonRect = new RectangleF(strategyNamePos.X + strategyNameSize.X + 10, drawPos.Y, rightButtonSize.X + 10, rightButtonSize.Y + 5);
+            Graphics.DrawBox(_rightButtonRect, new Color(0, 0, 0, 150));
+            Graphics.DrawTextWithBackground(rightButtonText, new System.Numerics.Vector2(_rightButtonRect.X + 5, drawPos.Y), Color.White, FontAlign.Left, backgroundColor);
+
+            drawPos.Y += Math.Max(leftButtonSize.Y, strategyNameSize.Y) + 10;
+
+            Graphics.DrawTextWithBackground("Strategy Advisor:", drawPos, Color.White, FontAlign.Left, backgroundColor);
             drawPos.Y += 25;
             
             foreach (var goal in _strategicGoals.OrderBy(g => g.Priority))
@@ -303,9 +376,10 @@ namespace SyndicateHelper
                          _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(goalRect, buttonToLink.GetClientRectCache, Settings.GoalCompletionColor));
                     }
                 }
-                Graphics.DrawText(fullText, new System.Numerics.Vector2(drawPos.X + 2, drawPos.Y), goal.DisplayColor);
+                Graphics.DrawTextWithBackground(fullText, new System.Numerics.Vector2(drawPos.X + 2, drawPos.Y), goal.DisplayColor, FontAlign.Left, backgroundColor);
                 drawPos.Y += 20;
             }
+            return drawPos.Y;
         }
         
         private MemberGoal ParseGoal(string goal)
@@ -442,6 +516,8 @@ namespace SyndicateHelper
             return false;
         }
 
+
+        
         private string GetDesiredDivisionForMember(string memberName)
         {
             var property = Settings.GetType().GetProperty(memberName);
@@ -449,7 +525,7 @@ namespace SyndicateHelper
             var listNode = property.GetValue(Settings) as ListNode;
             return listNode?.Value ?? "None";
         }
-        
+
         private void AddDebug(string message) { if (Settings.EnableDebugDrawing.Value) _debugMessages.Add(message); }
         
         private Dictionary<string, Element> FindPortraitElements(SyndicatePanel betrayalWindow)
