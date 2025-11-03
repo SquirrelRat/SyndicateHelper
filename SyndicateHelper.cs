@@ -44,7 +44,6 @@ namespace SyndicateHelper
         private readonly List<Tuple<RectangleF, Color>> _rectanglesToDraw = new();
         private readonly List<Tuple<RectangleF, RectangleF, Color>> _linksToDraw = new();
         private readonly List<StrategicGoal> _strategicGoals = new List<StrategicGoal>();
-        private string _currentStrategy = "";
         private readonly List<string> _debugMessages = new List<string>();
         private readonly HashSet<SyndicateDivision> _targetDivisions = new HashSet<SyndicateDivision>();
 
@@ -80,12 +79,6 @@ namespace SyndicateHelper
                 return null;
             }
 
-            if (Settings.StrategyProfile.Value != "Custom" && _currentStrategy != Settings.StrategyProfile.Value)
-            {
-                ApplyStrategyProfile();
-                _currentStrategy = Settings.StrategyProfile.Value;
-            }
-
             var betrayalWindow = GameController.IngameState.IngameUi.BetrayalWindow as SyndicatePanel;
             if (betrayalWindow == null || !betrayalWindow.IsVisible)
             {
@@ -95,7 +88,8 @@ namespace SyndicateHelper
             
             UpdateBoardAndPrisonState(betrayalWindow);
             GenerateStrategicGoals(betrayalWindow);
-            _strategyEvaluator = new SyndicateStrategy(Settings, _boardState, _imprisonedMemberCount);
+            var currentStrategy = SyndicateStrategies.Strategies.FirstOrDefault(s => s.Name == Settings.StrategyProfile.Value);
+            _strategyEvaluator = new SyndicateStrategy(Settings, _boardState, _imprisonedMemberCount, currentStrategy);
 
             var eventDataElement = betrayalWindow.BetrayalEventData as BetrayalEventData;
             _lastDecision = eventDataElement != null && eventDataElement.IsVisible ? ParseDecision(eventDataElement) : null;
@@ -390,63 +384,6 @@ namespace SyndicateHelper
             if (_strategicGoals.Count == 0) _strategicGoals.Add(new StrategicGoal { Text = "No strategy configured or board is optimal.", Priority = GoalPriority.Optimal, DisplayColor = Color.White });
         }
         
-        private void ApplyStrategyProfile()
-        {
-            var allMemberNodes = SyndicateMemberNames.ToDictionary(name => name, name => Settings.GetType().GetProperty(name)?.GetValue(Settings) as ListNode);
-            
-            foreach (var node in allMemberNodes.Values.Where(n => n != null)) node.Value = "None";
-
-            switch (Settings.StrategyProfile.Value)
-            {
-                case "Comprehensive Scarab Farm":
-                    SetGoalsByRewardKeyword("Scarab", SyndicateDivision.Intervention, "Cameria");
-                    break;
-                case "Crafting Meta (Research)":
-                    if(allMemberNodes.TryGetValue("Aisling", out var aislingNode) && aislingNode != null) aislingNode.Value = "Research (Leader)";
-                    if(allMemberNodes.TryGetValue("Vorici", out var voriciNode) && voriciNode != null) voriciNode.Value = "Research";
-                    if(allMemberNodes.TryGetValue("Hillock", out var hillockNode) && hillockNode != null) hillockNode.Value = "Fortification (Leader)";
-                    break;
-                case "Relationship-Based":
-                    Settings.OpposedDivisions.Value = "Transportation-Research,Fortification-Intervention";
-                    Settings.AlliedDivisions.Value = "Fortification-Transportation,Fortification-Research,Intervention-Transportation,Intervention-Research";
-                    if(allMemberNodes.TryGetValue("Gravicius", out var gravNode) && gravNode != null) gravNode.Value = "Transportation";
-                    if(allMemberNodes.TryGetValue("Rin", out var rinNode) && rinNode != null) rinNode.Value = "Transportation";
-                    if(allMemberNodes.TryGetValue("Janus", out var janusNode) && janusNode != null) janusNode.Value = "Research";
-                    if(allMemberNodes.TryGetValue("Guff", out var guffNode) && guffNode != null) guffNode.Value = "Research";
-                    if(allMemberNodes.TryGetValue("Hillock", out var hillockNode2) && hillockNode2 != null) hillockNode2.Value = "Fortification";
-                    break;
-            }
-
-            _targetDivisions.Clear();
-            foreach(var memberName in SyndicateMemberNames)
-            {
-                var goal = ParseGoal(GetDesiredDivisionForMember(memberName));
-                if (goal.Division != SyndicateDivision.None) _targetDivisions.Add(goal.Division);
-            }
-        }
-
-        private void SetGoalsByRewardKeyword(string keyword, SyndicateDivision primaryDivision, string desiredLeaderName)
-        {
-            var allMemberNodes = SyndicateMemberNames.ToDictionary(name => name, name => Settings.GetType().GetProperty(name)?.GetValue(Settings) as ListNode);
-            foreach (var memberRewardsPair in SyndicateRewardData.Rewards)
-            {
-                var memberName = memberRewardsPair.Key;
-                foreach (var divisionRewardPair in memberRewardsPair.Value)
-                {
-                    var division = divisionRewardPair.Key;
-                    var rewardInfo = divisionRewardPair.Value;
-                    if (rewardInfo.Text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (allMemberNodes.TryGetValue(memberName, out var node) && node != null)
-                        {
-                            if (memberName == desiredLeaderName && division == primaryDivision) node.Value = $"{division} (Leader)";
-                            else if (node.Value == "None") node.Value = division.ToString();
-                        }
-                    }
-                }
-            }
-        }
-
         private void ProcessBoardOverlays(SyndicatePanel betrayalWindow)
         {
             if (betrayalWindow.SyndicateStates == null) return;

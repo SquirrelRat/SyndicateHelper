@@ -9,20 +9,31 @@ namespace SyndicateHelper
         private readonly SyndicateHelperSettings _settings;
         private readonly Dictionary<string, SyndicateMemberState> _boardState;
         private readonly int _imprisonedMemberCount;
+        private readonly SyndicateStrategyDefinition _currentStrategy;
         private readonly HashSet<Tuple<SyndicateDivision, SyndicateDivision>> _opposedDivisions = new HashSet<Tuple<SyndicateDivision, SyndicateDivision>>();
         private readonly HashSet<Tuple<SyndicateDivision, SyndicateDivision>> _alliedDivisions = new HashSet<Tuple<SyndicateDivision, SyndicateDivision>>();
 
-        public SyndicateStrategy(SyndicateHelperSettings settings, Dictionary<string, SyndicateMemberState> boardState, int imprisonedMemberCount)
+        public SyndicateStrategy(SyndicateHelperSettings settings, Dictionary<string, SyndicateMemberState> boardState, int imprisonedMemberCount, SyndicateStrategyDefinition currentStrategy)
         {
             _settings = settings;
             _boardState = boardState;
             _imprisonedMemberCount = imprisonedMemberCount;
+            _currentStrategy = currentStrategy;
 
-            if (settings.StrategyProfile.Value == "Relationship-Based")
+            if (_currentStrategy?.Name == "Relationship-Based")
             {
-                ParseRelationshipRules(settings.OpposedDivisions.Value, _opposedDivisions);
-                ParseRelationshipRules(settings.AlliedDivisions.Value, _alliedDivisions);
+                ParseRelationshipRules(_currentStrategy.OpposedDivisions, _opposedDivisions);
+                ParseRelationshipRules(_currentStrategy.AlliedDivisions, _alliedDivisions);
             }
+        }
+
+        private int GetScore(string scoreName, int defaultValue)
+        {
+            if (_currentStrategy?.ScoreOverrides.TryGetValue(scoreName, out var score) ?? false)
+            {
+                return score;
+            }
+            return defaultValue;
         }
         
         public int ScoreChoiceByCode(string actionCode, SyndicateDecision decision)
@@ -31,7 +42,7 @@ namespace SyndicateHelper
 
             if (_settings.StrategyProfile.Value == "Relationship-Based" && actionCode == "NPCBefriendsAnother")
             {
-                return _settings.NPCBefriendsAnotherScore.Value + ScoreRelationshipChoice(decision);
+                return GetScore("NPCBefriendsAnotherScore", _settings.NPCBefriendsAnotherScore.Value) + ScoreRelationshipChoice(decision);
             }
 
             if (actionCode == "Interrogate")
@@ -56,21 +67,21 @@ namespace SyndicateHelper
             
             switch (actionCode)
             {
-                case "Execute": return _settings.ExecuteScore.Value;
-                case "PromoteNPC": return _settings.PromoteNPCScore.Value;
-                case "NPCBefriendsAnother": return _settings.NPCBefriendsAnotherScore.Value;
-                case "GainItemScarab": return _settings.GainItemScarabScore.Value;
-                case "GainItemAnyUnique": return _settings.GainItemAnyUniqueScore.Value;
-                case "GainItemCurrency": return _settings.GainItemCurrencyScore.Value;
+                case "Execute": return GetScore("ExecuteScore", _settings.ExecuteScore.Value);
+                case "PromoteNPC": return GetScore("PromoteNPCScore", _settings.PromoteNPCScore.Value);
+                case "NPCBefriendsAnother": return GetScore("NPCBefriendsAnotherScore", _settings.NPCBefriendsAnotherScore.Value);
+                case "GainItemScarab": return GetScore("GainItemScarabScore", _settings.GainItemScarabScore.Value);
+                case "GainItemAnyUnique": return GetScore("GainItemAnyUniqueScore", _settings.GainItemAnyUniqueScore.Value);
+                case "GainItemCurrency": return GetScore("GainItemCurrencyScore", _settings.GainItemCurrencyScore.Value);
                 case "GainItemMap": return 20;
                 case "GainItemVeiledItem": return 20;
-                case "GainIntelligence": return _settings.GainIntelligenceScore.Value;
-                case "GainIntelligenceLarge": return _settings.GainIntelligenceLargeScore.Value;
-                case "DestroyAllItemsInDivision": return _settings.DestroyItemsScore.Value;
-                case "DestroyAllItemsOfRivalDivision": return _settings.DestroyItemsScore.Value;
-                case "RemoveAllRivalries": return _settings.RemoveRivalriesScore.Value;
-                case "RemoveAllRivalriesInDivision": return _settings.RemoveRivalriesScore.Value;
-                case "RemoveAllFromPrison": return _settings.RemoveFromPrisonScore.Value;
+                case "GainIntelligence": return GetScore("GainIntelligenceScore", _settings.GainIntelligenceScore.Value);
+                case "GainIntelligenceLarge": return GetScore("GainIntelligenceLargeScore", _settings.GainIntelligenceLargeScore.Value);
+                case "DestroyAllItemsInDivision": return GetScore("DestroyItemsScore", _settings.DestroyItemsScore.Value);
+                case "DestroyAllItemsOfRivalDivision": return GetScore("DestroyItemsScore", _settings.DestroyItemsScore.Value);
+                case "RemoveAllRivalries": return GetScore("RemoveRivalriesScore", _settings.RemoveRivalriesScore.Value);
+                case "RemoveAllRivalriesInDivision": return GetScore("RemoveRivalriesScore", _settings.RemoveRivalriesScore.Value);
+                case "RemoveAllFromPrison": return GetScore("RemoveFromPrisonScore", _settings.RemoveFromPrisonScore.Value);
                 case "SwapNPCJob": return ScoreSwapJob(decision);
                 case "SwapLeader": return ScoreSwapLeader(decision);
                 case "StealRanks": return ScoreStealRanks(decision);
@@ -86,17 +97,17 @@ namespace SyndicateHelper
         #region Contextual Scoring Helpers
         private int ScoreSwapJob(SyndicateDecision decision)
         {
-            return _settings.SwapNPCJobScore.Value;
+            return GetScore("SwapNPCJobScore", _settings.SwapNPCJobScore.Value);
         }
 
         private int ScoreSwapLeader(SyndicateDecision decision)
         {
-            return _settings.SwapLeaderScore.Value;
+            return GetScore("SwapLeaderScore", _settings.SwapLeaderScore.Value);
         }
 
         private int ScoreStealRanks(SyndicateDecision decision)
         {
-            return _settings.StealRanksScore.Value;
+            return GetScore("StealRanksScore", _settings.StealRanksScore.Value);
         }
         
         private int ScoreStealIntelligence(SyndicateDecision decision)
@@ -123,16 +134,17 @@ namespace SyndicateHelper
             if (!_boardState.TryGetValue(member1Name, out var member1State) || !_boardState.TryGetValue(member2Name, out var member2State)) return 0;
 
             var tuple = new Tuple<SyndicateDivision, SyndicateDivision>(member1State.Division, member2State.Division);
+            var relationshipScoreModifier = GetScore("RelationshipScoreModifier", _settings.RelationshipScoreModifier.Value);
 
             if (relationshipType == "befriends")
             {
-                if (_opposedDivisions.Contains(tuple)) return -_settings.RelationshipScoreModifier.Value;
-                if (_alliedDivisions.Contains(tuple)) return _settings.RelationshipScoreModifier.Value;
+                if (_opposedDivisions.Contains(tuple)) return -relationshipScoreModifier;
+                if (_alliedDivisions.Contains(tuple)) return relationshipScoreModifier;
             }
             else if (relationshipType == "becomes rivals with")
             {
-                if (_opposedDivisions.Contains(tuple)) return _settings.RelationshipScoreModifier.Value;
-                if (_alliedDivisions.Contains(tuple)) return -_settings.RelationshipScoreModifier.Value;
+                if (_opposedDivisions.Contains(tuple)) return relationshipScoreModifier;
+                if (_alliedDivisions.Contains(tuple)) return -relationshipScoreModifier;
             }
 
             return 0;

@@ -3,6 +3,7 @@ using ExileCore.Shared.Interfaces;
 using ExileCore.Shared.Nodes;
 using SharpDX;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SyndicateHelper
 {
@@ -79,24 +80,60 @@ namespace SyndicateHelper
                 "Research", "Research (Leader)", "Intervention", "Intervention (Leader)"
             };
             
-            var profileOptions = new List<string> {
-                "Custom", "Comprehensive Scarab Farm", "Crafting Meta (Research)", "Gamble (Currency/Div)",
-                "Delve Deeper", "Einhar's Menagerie", "The Atlas Grind", "Relationship-Based"
-            };
+            var profileOptions = SyndicateStrategies.Strategies.Select(s => s.Name).ToList();
+            profileOptions.Insert(0, "Custom");
             StrategyProfile.Values = profileOptions;
             StrategyProfile.Value = "Comprehensive Scarab Farm";
-            
-            var members = new[] {
-                Aisling, Cameria, Elreon, Gravicius, Guff, Haku, Hillock, ItThatFled, Janus, Jorgin,
-                Korell, Leo, Rin, Riker, Tora, Vagan, Vorici
+            StrategyProfile.OnValueSelected += (value) => ApplyStrategyGoals(value);
+
+            var members = new Dictionary<string, ListNode>
+            {
+                { "Aisling", Aisling }, { "Cameria", Cameria }, { "Elreon", Elreon }, { "Gravicius", Gravicius },
+                { "Guff", Guff }, { "Haku", Haku }, { "Hillock", Hillock }, { "It That Fled", ItThatFled },
+                { "Janus", Janus }, { "Jorgin", Jorgin }, { "Korell", Korell }, { "Leo", Leo },
+                { "Rin", Rin }, { "Riker", Riker }, { "Tora", Tora }, { "Vagan", Vagan }, { "Vorici", Vorici }
             };
-            foreach (var member in members)
+
+            foreach (var member in members.Values)
             {
                 if (member.Values == null || member.Values.Count == 0)
                 {
                     member.Values = goalOptions;
                 }
             }
+            ApplyStrategyGoals(StrategyProfile.Value);
+        }
+
+        private void ApplyStrategyGoals(string strategyName)
+        {
+            var members = new Dictionary<string, ListNode>
+            {
+                { "Aisling", Aisling }, { "Cameria", Cameria }, { "Elreon", Elreon }, { "Gravicius", Gravicius },
+                { "Guff", Guff }, { "Haku", Haku }, { "Hillock", Hillock }, { "It That Fled", ItThatFled },
+                { "Janus", Janus }, { "Jorgin", Jorgin }, { "Korell", Korell }, { "Leo", Leo },
+                { "Rin", Rin }, { "Riker", Riker }, { "Tora", Tora }, { "Vagan", Vagan }, { "Vorici", Vorici }
+            };
+
+            foreach (var member in members.Values)
+            {
+                member.Value = "None";
+            }
+
+            if (strategyName == "Custom") return;
+
+            var strategy = SyndicateStrategies.Strategies.FirstOrDefault(s => s.Name == strategyName);
+            if (strategy == null) return;
+
+            foreach (var goal in strategy.MemberGoals)
+            {
+                if (members.TryGetValue(goal.Key, out var memberNode))
+                {
+                    memberNode.Value = goal.Value;
+                }
+            }
+
+            OpposedDivisions.Value = strategy.OpposedDivisions;
+            AlliedDivisions.Value = strategy.AlliedDivisions;
         }
     }
 }
