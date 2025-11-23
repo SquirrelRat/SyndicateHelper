@@ -57,6 +57,7 @@ namespace SyndicateHelper
 
         private readonly List<CachedText> _cachedChoiceScores = new List<CachedText>();
         private readonly List<CachedText> _cachedRewardText = new List<CachedText>();
+        private readonly List<RectangleF> _goalRects = new List<RectangleF>();
 
         private RectangleF _leftButtonRect;
         private RectangleF _rightButtonRect;
@@ -112,6 +113,7 @@ namespace SyndicateHelper
             _rectanglesToDraw.Clear();
             _cachedChoiceScores.Clear();
             _cachedRewardText.Clear();
+            _goalRects.Clear();
 
             if (_isBoardStateDirty)
             {
@@ -130,7 +132,6 @@ namespace SyndicateHelper
             if (_lastDecision != null)
             {
                 ProcessEncounterChoices(eventDataElement);
-                ProcessChoiceHighlights();
             }
 
             ProcessBoardOverlays(betrayalWindow);
@@ -163,6 +164,11 @@ namespace SyndicateHelper
 
             var backgroundColor = new Color((byte)0, (byte)0, (byte)0, (byte)Settings.BackgroundAlpha.Value);
             var advisorBottomY = RenderStrategyAdvisor(betrayalWindow, backgroundColor);
+
+            if (_lastDecision != null)
+            {
+                ProcessChoiceHighlights();
+            }
 
             foreach (var rect in _rectanglesToDraw) { Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value); }
             foreach (var link in _linksToDraw)
@@ -220,12 +226,11 @@ namespace SyndicateHelper
 
             var highlightedButtonAddresses = new HashSet<long>();
 
-            var drawPosY = 175f;
-            foreach (var goal in _strategicGoals.OrderBy(g => g.Priority))
+            var sortedGoals = _strategicGoals.OrderBy(g => g.Priority).ToList();
+            for (int i = 0; i < sortedGoals.Count && i < _goalRects.Count; i++)
             {
-                var fullText = $"[{goal.Priority}] {goal.Text}";
-                var goalRect = new RectangleF(100, drawPosY, Graphics.MeasureText(fullText).X + 4, Graphics.MeasureText(fullText).Y);
-                drawPosY += 20;
+                var goal = sortedGoals[i];
+                var goalRect = _goalRects[i];
 
                 bool specialCompletes = ChoiceAccomplishesGoal(_lastDecision.SpecialText, goal.Text, _lastDecision.MemberName, _boardState);
                 bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Text, _lastDecision.MemberName, _boardState);
@@ -248,17 +253,21 @@ namespace SyndicateHelper
                 var buttonRect = choice.Button?.GetClientRectCache ?? RectangleF.Empty;
                 if (buttonRect == RectangleF.Empty) continue;
 
-                var scoreColor = highlightedButtonAddresses.Contains(choice.Button.Address) ? Settings.GoalCompletionColor.Value :
-                                 choice.Score > 0 ? Settings.GoodChoiceColor.Value :
-                                 choice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
-
                 var scoreText = $"[{choice.Score}]";
                 var textSize = Graphics.MeasureText(scoreText);
                 var textPos = new System.Numerics.Vector2(buttonRect.Right + 5, buttonRect.Center.Y - textSize.Y / 2 - 5);
 
-                _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = scoreColor });
+                // Skip recoloring if this button is already highlighted for goal completion
+                if (highlightedButtonAddresses.Contains(choice.Button.Address))
+                {
+                    _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = Settings.GoalCompletionColor.Value });
+                    continue;
+                }
 
-                if (highlightedButtonAddresses.Contains(choice.Button.Address)) continue;
+                var scoreColor = choice.Score > 0 ? Settings.GoodChoiceColor.Value :
+                                 choice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
+
+                _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = scoreColor });
 
                 if (choice.Score == bestChoice.Score)
                 {
@@ -363,12 +372,13 @@ namespace SyndicateHelper
             {
                 string prefix = $"[{goal.Priority}] ";
                 string fullText = prefix + goal.Text;
+                var goalRect = new RectangleF(drawPos.X, drawPos.Y, Graphics.MeasureText(fullText).X + 4, Graphics.MeasureText(fullText).Y);
+                _goalRects.Add(goalRect);
                 
                 if (_lastDecision != null)
                 {
                     bool specialCompletes = ChoiceAccomplishesGoal(_lastDecision.SpecialText, goal.Text, _lastDecision.MemberName, _boardState);
                     bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Text, _lastDecision.MemberName, _boardState);
-                    var goalRect = new RectangleF(drawPos.X, drawPos.Y, Graphics.MeasureText(fullText).X + 4, Graphics.MeasureText(fullText).Y);
 
                     var buttonToLink = specialCompletes ? _lastDecision.SpecialButton : (interrogateCompletes ? _lastDecision.InterrogateButton : null);
                     if (buttonToLink != null)
