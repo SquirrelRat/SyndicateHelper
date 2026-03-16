@@ -1,3 +1,7 @@
+// SyndicateStrategies.cs
+// Defines pre-configured strategy profiles for syndicate board optimization.
+// Each strategy specifies member placement goals and scoring preferences for different playstyles.
+
 using System.Collections.Generic;
 
 namespace SyndicateHelper
@@ -17,36 +21,25 @@ namespace SyndicateHelper
         {
             new SyndicateStrategyDefinition
             {
-                Name = "Comprehensive Scarab Farm",
+                Name = "3.28 Scarab Powerfarm",
                 MemberGoals = new Dictionary<string, string>
                 {
                     { "Cameria", "Intervention (Leader)" }, { "Rin", "Intervention" }, { "Vagan", "Intervention" },
                     { "Gravicius", "Intervention" }, { "Tora", "Fortification" }, { "Hillock", "Fortification" },
-                    { "Guff", "Fortification" }, { "Aisling", "Research" }, { "Vorici", "Research" },
-                    { "It That Fled", "Research" }, { "Leo", "Transportation" }, { "Janus", "Transportation" }
+                    { "Guff", "Research" }, { "Aisling", "Fortification (Leader)" },
+                    { "It That Fled", "Transportation" }, { "Leo", "Transportation" }, { "Janus", "Transportation" },
+                    { "Jorgin", "Research" }, { "Korell", "Research" },
+                    { "Riker", "Research" }
                 },
                 ScoreOverrides = new Dictionary<string, int>
                 {
                     { "GainItemScarabScore", 100 },
                     { "PromoteNPCScore", 50 },
-                    { "ExecuteScore", 40 }
-                }
-            },
-            new SyndicateStrategyDefinition
-            {
-                Name = "Crafting Meta (Research)",
-                MemberGoals = new Dictionary<string, string>
-                {
-                    { "Aisling", "Research (Leader)" }, { "Vorici", "Research" }, { "It That Fled", "Research" },
-                    { "Hillock", "Fortification (Leader)" }, { "Tora", "Fortification" }, { "Guff", "Fortification" },
-                    { "Vagan", "Intervention" }, { "Cameria", "Intervention" }
+                    { "ExecuteScore", 40 },
+                    { "GainItemAnyUniqueScore", 50 }
                 },
-                ScoreOverrides = new Dictionary<string, int>
-                {
-                    { "PromoteNPCScore", 60 },
-                    { "ExecuteScore", 50 },
-                    { "SwapNPCJobScore", 20 }
-                }
+                OpposedDivisions = "Fortification",
+                AlliedDivisions = ""
             },
             new SyndicateStrategyDefinition
             {
@@ -76,8 +69,39 @@ namespace SyndicateHelper
                 },
                 ScoreOverrides = new Dictionary<string, int>
                 {
-                    { "GainItemCurrencyScore", 90 },
-                    { "GainItemAnyUniqueScore", 60 }
+                    { "PromoteNPCScore", 50 },
+                    { "ExecuteScore", 40 }
+                }
+            },
+            new SyndicateStrategyDefinition
+            {
+                Name = "Einhar's Menagerie",
+                MemberGoals = new Dictionary<string, string>
+                {
+                    { "Jorgin", "Research (Leader)" }, { "It That Fled", "Research" }, { "Vorici", "Research" },
+                    { "Aisling", "Research" }, { "Tora", "Fortification" }, { "Guff", "Fortification" },
+                    { "Vagan", "Intervention" }, { "Cameria", "Intervention" }, { "Gravicius", "Intervention" }
+                },
+                ScoreOverrides = new Dictionary<string, int>
+                {
+                    { "GainItemScarabScore", 100 },
+                    { "PromoteNPCScore", 50 },
+                    { "ExecuteScore", 40 }
+                }
+            },
+            new SyndicateStrategyDefinition
+            {
+                Name = "The Atlas Grind",
+                MemberGoals = new Dictionary<string, string>
+                {
+                    { "Hillock", "Transportation" }, { "Gravicius", "Transportation" }, { "Tora", "Fortification" },
+                    { "Haku", "Intervention" }, { "Janus", "Intervention" }, { "Leo", "Intervention" },
+                    { "Rin", "Intervention" }, { "Vagan", "Intervention" }, { "Vorici", "Intervention" }
+                },
+                ScoreOverrides = new Dictionary<string, int>
+                {
+                    { "GainItemAnyUniqueScore", 90 },
+                    { "GainItemCurrencyScore", 80 }
                 }
             },
             new SyndicateStrategyDefinition
@@ -92,25 +116,6 @@ namespace SyndicateHelper
                 {
                     { "GainIntelligenceLargeScore", 80 },
                     { "GainIntelligenceScore", 40 }
-                }
-            },
-            new SyndicateStrategyDefinition
-            {
-                Name = "Einhar's Menagerie",
-                MemberGoals = new Dictionary<string, string>
-                {
-                    { "Jorgin", "Research (Leader)" }, { "It That Fled", "Research" }, { "Vorici", "Research" },
-                    { "Aisling", "Research" }, { "Tora", "Fortification" }, { "Guff", "Fortification" },
-                    { "Vagan", "Intervention" }, { "Rin", "Intervention" }
-                }
-            },
-            new SyndicateStrategyDefinition
-            {
-                Name = "The Atlas Grind",
-                MemberGoals = new Dictionary<string, string>
-                {
-                    { "Hillock", "Transportation" }, { "Gravicius", "Fortification" }, { "Cameria", "Intervention" },
-                    { "Rin", "Intervention" }, { "It That Fled", "Research" }, { "Vorici", "Research" }
                 }
             }
         };

@@ -1,3 +1,7 @@
+// SyndicateStrategy.cs
+// Decision scoring engine for syndicate encounter choices.
+// Evaluates actions based on current board state, member goals, and configured strategy weights.
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -35,7 +39,7 @@ namespace SyndicateHelper
             }
             return defaultValue;
         }
-        
+
         public int ScoreChoiceByCode(string actionCode, SyndicateDecision decision)
         {
             if (string.IsNullOrWhiteSpace(actionCode)) return -999;
@@ -48,23 +52,23 @@ namespace SyndicateHelper
             if (actionCode == "Interrogate")
             {
                 if (!_boardState.TryGetValue(decision.MemberName, out var memberState)) return 0;
-                var desiredGoal = ParseGoal(GetDesiredDivisionForMember(decision.MemberName));
+                var desiredGoal = SyndicateHelperUtility.ParseGoal(SyndicateHelperUtility.GetDesiredDivisionForMember(decision.MemberName, _settings));
                 if (desiredGoal.IsPrimaryLeader && memberState.IsLeader && memberState.Division == desiredGoal.Division)
                 {
-                    return -200;
+                    return SyndicateHelperConstants.PenaltyLeaderInterrogation;
                 }
 
-                if (_imprisonedMemberCount < 3)
+                if (_imprisonedMemberCount < SyndicateHelperConstants.MaxPrisonSlots)
                 {
                     int rank = memberState.Rank switch { "Sergeant" => 1, "Lieutenant" => 2, "Captain" => 3, _ => 0 };
-                    return 10 + (rank * 10);
+                    return SyndicateHelperConstants.BaseInterrogateScore + (rank * SyndicateHelperConstants.InterrogateRankMultiplier);
                 }
                 else
                 {
-                    return -100;
+                    return SyndicateHelperConstants.PenaltyPrisonFull;
                 }
             }
-            
+
             switch (actionCode)
             {
                 case "Execute": return GetScore("ExecuteScore", _settings.ExecuteScore.Value);
@@ -73,8 +77,8 @@ namespace SyndicateHelper
                 case "GainItemScarab": return GetScore("GainItemScarabScore", _settings.GainItemScarabScore.Value);
                 case "GainItemAnyUnique": return GetScore("GainItemAnyUniqueScore", _settings.GainItemAnyUniqueScore.Value);
                 case "GainItemCurrency": return GetScore("GainItemCurrencyScore", _settings.GainItemCurrencyScore.Value);
-                case "GainItemMap": return 20;
-                case "GainItemVeiledItem": return 20;
+                case "GainItemMap": return SyndicateHelperConstants.ScoreGainItemMap;
+                case "GainItemVeiledItem": return SyndicateHelperConstants.ScoreGainItemVeiledItem;
                 case "GainIntelligence": return GetScore("GainIntelligenceScore", _settings.GainIntelligenceScore.Value);
                 case "GainIntelligenceLarge": return GetScore("GainIntelligenceLargeScore", _settings.GainIntelligenceLargeScore.Value);
                 case "DestroyAllItemsInDivision": return GetScore("DestroyItemsScore", _settings.DestroyItemsScore.Value);
@@ -88,13 +92,12 @@ namespace SyndicateHelper
                 case "StealIntelligence": return ScoreStealIntelligence(decision);
                 case "RemoveNPCFromOrg": return ScoreRemoveNpc(decision);
                 case "NPCLeavesOrg": return ScoreRemoveNpc(decision);
-                case "DownrankRivalsUprankMyDivision": return 50;
+                case "DownrankRivalsUprankMyDivision": return SyndicateHelperConstants.ScoreDownrankRivalsUprankMyDivision;
                 case "ExecuteSafehouse": return 0;
                 default: return 0;
             }
         }
-        
-        #region Contextual Scoring Helpers
+
         private int ScoreSwapJob(SyndicateDecision decision)
         {
             return GetScore("SwapNPCJobScore", _settings.SwapNPCJobScore.Value);
@@ -109,22 +112,22 @@ namespace SyndicateHelper
         {
             return GetScore("StealRanksScore", _settings.StealRanksScore.Value);
         }
-        
+
         private int ScoreStealIntelligence(SyndicateDecision decision)
         {
-            return 20;
+            return SyndicateHelperConstants.ScoreStealIntelligence;
         }
 
         private int ScoreRemoveNpc(SyndicateDecision decision)
         {
-            var desiredGoal = ParseGoal(GetDesiredDivisionForMember(decision.MemberName));
-            return (desiredGoal.Division == SyndicateDivision.None) ? 40 : -60;
+            var desiredGoal = SyndicateHelperUtility.ParseGoal(SyndicateHelperUtility.GetDesiredDivisionForMember(decision.MemberName, _settings));
+            return (desiredGoal.Division == SyndicateDivision.None) ? SyndicateHelperConstants.ScoreRemoveNpcNeutral : SyndicateHelperConstants.ScoreRemoveNpcWithGoal;
         }
 
         private int ScoreRelationshipChoice(SyndicateDecision decision)
         {
             var text = decision.SpecialText;
-            var match = System.Text.RegularExpressions.Regex.Match(text, "(.+?) (befriends|becomes rivals with) (.+)");
+            var match = System.Text.RegularExpressions.Regex.Match(text, @"(.+?)\s+(befriends|becomes rivals with)\s+(.+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (!match.Success) return 0;
 
             var member1Name = match.Groups[1].Value.Trim();
@@ -136,12 +139,12 @@ namespace SyndicateHelper
             var tuple = new Tuple<SyndicateDivision, SyndicateDivision>(member1State.Division, member2State.Division);
             var relationshipScoreModifier = GetScore("RelationshipScoreModifier", _settings.RelationshipScoreModifier.Value);
 
-            if (relationshipType == "befriends")
+            if (relationshipType.Equals("befriends", StringComparison.OrdinalIgnoreCase))
             {
                 if (_opposedDivisions.Contains(tuple)) return -relationshipScoreModifier;
                 if (_alliedDivisions.Contains(tuple)) return relationshipScoreModifier;
             }
-            else if (relationshipType == "becomes rivals with")
+            else if (relationshipType.Equals("becomes rivals with", StringComparison.OrdinalIgnoreCase))
             {
                 if (_opposedDivisions.Contains(tuple)) return relationshipScoreModifier;
                 if (_alliedDivisions.Contains(tuple)) return -relationshipScoreModifier;
@@ -149,44 +152,30 @@ namespace SyndicateHelper
 
             return 0;
         }
-        #endregion
-
-        #region Utility methods
-
-
-        private MemberGoal ParseGoal(string goal)
-        {
-            if (string.IsNullOrEmpty(goal) || goal == "None")
-                return new MemberGoal { Division = SyndicateDivision.None, IsPrimaryLeader = false };
-            var isLeader = goal.Contains("(Leader)");
-            var divisionName = goal.Replace(" (Leader)", "").Trim();
-            if (System.Enum.TryParse(divisionName, out SyndicateDivision division))
-                return new MemberGoal { Division = division, IsPrimaryLeader = isLeader };
-            return new MemberGoal { Division = SyndicateDivision.None, IsPrimaryLeader = false };
-        }
-
-        private string GetDesiredDivisionForMember(string memberName)
-        {
-            var property = _settings.GetType().GetProperty(memberName);
-            if (property == null) return "None";
-            var listNode = property.GetValue(_settings) as ExileCore.Shared.Nodes.ListNode;
-            return listNode?.Value ?? "None";
-        }
 
         private void ParseRelationshipRules(string rules, HashSet<Tuple<SyndicateDivision, SyndicateDivision>> ruleSet)
         {
             if (string.IsNullOrWhiteSpace(rules)) return;
+
             var pairs = rules.Split(',');
             foreach (var pair in pairs)
             {
-                var divisions = pair.Split('-');
-                if (divisions.Length == 2 && System.Enum.TryParse(divisions[0], out SyndicateDivision div1) && System.Enum.TryParse(divisions[1], out SyndicateDivision div2))
+                var trimmedPair = pair.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedPair)) continue;
+
+                var divisions = trimmedPair.Split('-');
+                if (divisions.Length != 2) continue;
+
+                var div1Name = divisions[0].Trim();
+                var div2Name = divisions[1].Trim();
+
+                if (System.Enum.TryParse(div1Name, out SyndicateDivision div1) &&
+                    System.Enum.TryParse(div2Name, out SyndicateDivision div2))
                 {
                     ruleSet.Add(new Tuple<SyndicateDivision, SyndicateDivision>(div1, div2));
-                    ruleSet.Add(new Tuple<SyndicateDivision, SyndicateDivision>(div2, div1)); // Add the reverse pair for easy lookup
+                    ruleSet.Add(new Tuple<SyndicateDivision, SyndicateDivision>(div2, div1));
                 }
             }
         }
-        #endregion
     }
 }

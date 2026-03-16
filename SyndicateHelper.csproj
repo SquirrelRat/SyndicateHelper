@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>Library</OutputType>
     <UseWindowsForms>true</UseWindowsForms>
     <PlatformTarget>x64</PlatformTarget>
@@ -9,31 +9,28 @@
     <PathMap>$(MSBuildProjectDirectory)=$(MSBuildProjectName)</PathMap>
     <EmbedAllSources>true</EmbedAllSources>
   </PropertyGroup>
-
   <ItemGroup>
     <Reference Include="ExileCore">
-      <HintPath>$(exapiPackage)\ExileCore.dll</HintPath>
+      <HintPath>..\..\..\ExileCore.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="GameOffsets">
-      <HintPath>$(exapiPackage)\GameOffsets.dll</HintPath>
+      <HintPath>..\..\..\GameOffsets.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
-
   <ItemGroup>
     <Reference Include="ImGui.NET">
-      <HintPath>$(exapiPackage)\ImGui.NET.dll</HintPath>
+      <HintPath>..\..\..\ImGui.NET.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>$(exapiPackage)\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\..\..\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="SharpDX.Mathematics">
-      <HintPath>$(exapiPackage)\SharpDX.Mathematics.dll</HintPath>
+      <HintPath>..\..\..\SharpDX.Mathematics.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
-
 </Project>
