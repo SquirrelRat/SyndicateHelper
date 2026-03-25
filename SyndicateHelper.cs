@@ -54,6 +54,15 @@ namespace SyndicateHelper
         private readonly List<StrategicGoal> _strategicGoals = new List<StrategicGoal>();
         private readonly List<string> _debugMessages = new List<string>();
         private readonly HashSet<SyndicateDivision> _targetDivisions = new HashSet<SyndicateDivision>();
+        
+        private readonly Dictionary<GoalPriority, bool> _collapsedSections = new()
+        {
+            [GoalPriority.Critical] = false,
+            [GoalPriority.Major] = false,
+            [GoalPriority.Minor] = true,
+            [GoalPriority.Optimal] = true
+        };
+        private bool _advisorMinimized = false;
 
         private Dictionary<string, SyndicateMemberState> _boardState = new Dictionary<string, SyndicateMemberState>();
         private int _imprisonedMemberCount = 0;
@@ -68,6 +77,7 @@ namespace SyndicateHelper
 
         private RectangleF _leftButtonRect;
         private RectangleF _rightButtonRect;
+        private RectangleF _minimizeButtonRect;
         private DateTime _lastClickTime = DateTime.MinValue;
         private bool _isBoardStateDirty = true;
 
@@ -209,6 +219,30 @@ namespace SyndicateHelper
             if (ImGui.ColorEdit4("##BadChoice", ref badColor))
             {
                 Settings.BadChoiceColor.Value = new SharpDX.Color((byte)(badColor.X * 255), (byte)(badColor.Y * 255), (byte)(badColor.Z * 255), (byte)(badColor.W * 255));
+            }
+
+            ImGui.Separator();
+            ImGui.Text("Animation Settings");
+
+            ImGui.Text("Enable Animations");
+            var enableAnimations = Settings.EnableAnimations.Value;
+            if (ImGui.Checkbox("##EnableAnimations", ref enableAnimations))
+            {
+                Settings.EnableAnimations.Value = enableAnimations;
+            }
+
+            ImGui.Text("Animation Speed");
+            var animSpeed = Settings.AnimationSpeed.Value;
+            if (ImGui.SliderFloat("##AnimationSpeed", ref animSpeed, Settings.AnimationSpeed.Min, Settings.AnimationSpeed.Max))
+            {
+                Settings.AnimationSpeed.Value = animSpeed;
+            }
+
+            ImGui.Text("Animation Intensity");
+            var animIntensity = Settings.AnimationIntensity.Value;
+            if (ImGui.SliderFloat("##AnimationIntensity", ref animIntensity, Settings.AnimationIntensity.Min, Settings.AnimationIntensity.Max))
+            {
+                Settings.AnimationIntensity.Value = animIntensity;
             }
         }
 
@@ -431,6 +465,11 @@ namespace SyndicateHelper
                     CycleStrategy(1);
                     _lastClickTime = DateTime.Now;
                 }
+                else if (_minimizeButtonRect.Contains(mousePos))
+                {
+                    _advisorMinimized = !_advisorMinimized;
+                    _lastClickTime = DateTime.Now;
+                }
             }
 
             return null;
@@ -453,8 +492,8 @@ namespace SyndicateHelper
                 #pragma warning restore CS0618
                 if (betrayalWindow == null || !betrayalWindow.IsVisible) return;
 
+                var advisorBottomY = RenderStrategyAdvisorImGui(betrayalWindow);
                 var backgroundColor = new Color((byte)0, (byte)0, (byte)0, (byte)Settings.BackgroundAlpha.Value);
-                var advisorBottomY = RenderStrategyAdvisor(betrayalWindow, backgroundColor);
 
             if (_lastDecision != null)
             {
@@ -463,7 +502,32 @@ namespace SyndicateHelper
 
             if (Settings.ShowButtons.Value)
             {
-                foreach (var rect in _rectanglesToDraw) { Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value); }
+                foreach (var rect in _rectanglesToDraw)
+                {
+                    Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value);
+                }
+
+                if (Settings.EnableAnimations.Value)
+                {
+                    var bestChoice = _lastChoices.OrderByDescending(c => c.Score).FirstOrDefault();
+                    if (bestChoice.Button != null && bestChoice.Button.IsVisible)
+                    {
+                        var bestButtonRect = bestChoice.Button.GetClientRectCache;
+                        if (!bestButtonRect.IsEmpty)
+                        {
+                            var scoreColor = bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
+                                             bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
+
+                            SyndicateHelperUtility.DrawSnakeEffect(
+                                bestButtonRect,
+                                scoreColor,
+                                Settings.AnimationSpeed.Value,
+                                Settings.AnimationIntensity.Value,
+                                Graphics.DrawBox
+                            );
+                        }
+                    }
+                }
 
                 if (Settings.ShowCurves.Value)
                 {
@@ -619,6 +683,24 @@ namespace SyndicateHelper
                     _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, Settings.BadChoiceColor.Value));
                 }
             }
+
+            if (Settings.EnableAnimations.Value && bestChoice.Button != null && bestChoice.Button.IsVisible)
+            {
+                var bestButtonRect = bestChoice.Button.GetClientRectCache;
+                if (!bestButtonRect.IsEmpty)
+                {
+                    var scoreColor = bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
+                                     bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
+
+                    SyndicateHelperUtility.DrawSnakeEffect(
+                        bestButtonRect,
+                        scoreColor,
+                        Settings.AnimationSpeed.Value,
+                        Settings.AnimationIntensity.Value,
+                        Graphics.DrawBox
+                    );
+                }
+            }
         }
 
 
@@ -720,63 +802,133 @@ namespace SyndicateHelper
             return false;
         }
         
-        private float RenderStrategyAdvisor(SyndicatePanel betrayalWindow, Color backgroundColor)
+        private float RenderStrategyAdvisorImGui(SyndicatePanel betrayalWindow)
         {
-            var drawPos = new System.Numerics.Vector2(SyndicateHelperConstants.DefaultDrawPositionX, SyndicateHelperConstants.DefaultDrawPositionY);
-
-            var leftButtonText = "<-";
-            var leftButtonSize = Graphics.MeasureText(leftButtonText, SyndicateHelperConstants.DefaultFontSize);
-            var leftButtonPos = drawPos;
-            _leftButtonRect = new RectangleF(drawPos.X, drawPos.Y, leftButtonSize.X + SyndicateHelperConstants.ButtonPadding, leftButtonSize.Y + SyndicateHelperConstants.ButtonVerticalPadding);
-            Graphics.DrawBox(_leftButtonRect, new Color((byte)0, (byte)0, (byte)0, SyndicateHelperConstants.ButtonBackgroundAlpha));
-            Graphics.DrawTextWithBackground(leftButtonText, leftButtonPos, Color.White, FontAlign.Center, backgroundColor);
-
-            var rightButtonText = "->";
-            var rightButtonSize = Graphics.MeasureText(rightButtonText, SyndicateHelperConstants.DefaultFontSize);
-            var rightButtonPos = new System.Numerics.Vector2(drawPos.X + SyndicateHelperConstants.ButtonPadding + leftButtonSize.X + SyndicateHelperConstants.ButtonHorizontalSpacing, drawPos.Y);
-            _rightButtonRect = new RectangleF(rightButtonPos.X, drawPos.Y, rightButtonSize.X + SyndicateHelperConstants.ButtonPadding, rightButtonSize.Y + SyndicateHelperConstants.ButtonVerticalPadding);
-            Graphics.DrawBox(_rightButtonRect, new Color((byte)0, (byte)0, (byte)0, SyndicateHelperConstants.ButtonBackgroundAlpha));
-            Graphics.DrawTextWithBackground(rightButtonText, rightButtonPos, Color.White, FontAlign.Center, backgroundColor);
-
-            var strategyName = Settings.StrategyProfile.Value ?? "Custom";
-            var strategyNameSize = Graphics.MeasureText(strategyName, SyndicateHelperConstants.DefaultFontSize);
-            var strategyNamePos = new System.Numerics.Vector2(_rightButtonRect.Right + SyndicateHelperConstants.ButtonHorizontalSpacing, drawPos.Y);
-            Graphics.DrawTextWithBackground(strategyName, strategyNamePos, Color.Orange, FontAlign.Left, backgroundColor);
-
-            drawPos.Y += Math.Max(leftButtonSize.Y, rightButtonSize.Y) + SyndicateHelperConstants.VerticalSpacing;
-
-            Graphics.DrawTextWithBackground("Strategy Advisor:", drawPos, Color.White, FontAlign.Left, backgroundColor);
-            drawPos.Y += SyndicateHelperConstants.GoalLineSpacing;
+            var panelWidth = 280;
+            var windowPos = new System.Numerics.Vector2(SyndicateHelperConstants.DefaultDrawPositionX, SyndicateHelperConstants.DefaultDrawPositionY);
+            
+            ImGui.SetNextWindowPos(windowPos, ImGuiCond.FirstUseEver);
+            ImGui.SetNextWindowSize(new System.Numerics.Vector2(panelWidth, 400), ImGuiCond.FirstUseEver);
+            
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, new System.Numerics.Vector4(0.08f, 0.08f, 0.1f, 0.85f));
+            ImGui.PushStyleColor(ImGuiCol.TitleBg, new System.Numerics.Vector4(0.15f, 0.15f, 0.2f, 0.9f));
+            ImGui.PushStyleColor(ImGuiCol.TitleBgActive, new System.Numerics.Vector4(0.2f, 0.2f, 0.25f, 0.95f));
+            ImGui.PushStyleColor(ImGuiCol.Border, new System.Numerics.Vector4(0.3f, 0.3f, 0.35f, 0.5f));
+            ImGui.PushStyleColor(ImGuiCol.Header, new System.Numerics.Vector4(0.2f, 0.2f, 0.25f, 0.6f));
+            ImGui.PushStyleColor(ImGuiCol.HeaderHovered, new System.Numerics.Vector4(0.25f, 0.25f, 0.3f, 0.7f));
+            ImGui.PushStyleColor(ImGuiCol.HeaderActive, new System.Numerics.Vector4(0.3f, 0.3f, 0.35f, 0.8f));
+            ImGui.PushStyleColor(ImGuiCol.Text, new System.Numerics.Vector4(1f, 1f, 1f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.TextDisabled, new System.Numerics.Vector4(0.5f, 0.5f, 0.5f, 1f));
+            
+            var windowFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysAutoResize;
+            
+            if (!ImGui.Begin("Strategy Advisor", windowFlags))
+            {
+                ImGui.PopStyleColor(9);
+                ImGui.End();
+                return windowPos.Y;
+            }
+            
+            var strategyNames = SyndicateStrategies.Strategies.Select(s => s.Name).ToList();
+            strategyNames.Insert(0, "Custom");
+            var currentStrategy = Settings.StrategyProfile.Value ?? "Custom";
+            var currentIndex = strategyNames.IndexOf(currentStrategy);
+            if (currentIndex < 0) currentIndex = 0;
+            
+            ImGui.Text("Strategy:");
+            ImGui.SameLine();
+            
+            if (ImGui.Combo("##Strategy", ref currentIndex, strategyNames.ToArray(), strategyNames.Count))
+            {
+                Settings.StrategyProfile.Value = strategyNames[currentIndex];
+                Settings.ApplyStrategyGoals(Settings.StrategyProfile.Value);
+                _isBoardStateDirty = true;
+            }
+            
+            ImGui.Separator();
             
             var sortedGoals = _strategicGoals.OrderBy(g => g.Priority).ToList();
-            foreach (var goal in sortedGoals)
+            var goalsByPriority = sortedGoals.GroupBy(g => g.Priority).ToDictionary(g => g.Key, g => g.ToList());
+            
+            if (sortedGoals.Count > 0)
             {
-                string prefix = $"[{goal.Priority}] ";
-                string fullText = prefix + goal.Text;
-                var textSize = Graphics.MeasureText(fullText, SyndicateHelperConstants.DefaultFontSize);
-                var goalRect = new RectangleF(
-                    drawPos.X - SyndicateHelperConstants.GoalFrameBorderPadding,
-                    drawPos.Y - SyndicateHelperConstants.GoalFrameBorderPadding,
-                    textSize.X + SyndicateHelperConstants.TextPadding * 2 + SyndicateHelperConstants.GoalFrameBorderPadding * 2,
-                    textSize.Y + SyndicateHelperConstants.GoalFrameBorderPadding * 2
-                );
-                _goalRects.Add(goalRect);
-
-                if (_lastDecision != null)
+                var totalGoals = sortedGoals.Count;
+                var optimalCount = goalsByPriority.GetValueOrDefault(GoalPriority.Optimal)?.Count ?? 0;
+                var criticalCount = goalsByPriority.GetValueOrDefault(GoalPriority.Critical)?.Count ?? 0;
+                var majorCount = goalsByPriority.GetValueOrDefault(GoalPriority.Major)?.Count ?? 0;
+                var minorCount = goalsByPriority.GetValueOrDefault(GoalPriority.Minor)?.Count ?? 0;
+                
+                ImGui.Text($"Progress: {optimalCount}/{totalGoals}");
+                ImGui.TextDisabled($"[!]{criticalCount}  [^]{majorCount}  [-]{minorCount}  [+]{optimalCount}");
+                ImGui.Separator();
+            }
+            
+            _goalRects.Clear();
+            
+            foreach (var priority in new[] { GoalPriority.Critical, GoalPriority.Major, GoalPriority.Minor, GoalPriority.Optimal })
+            {
+                if (!goalsByPriority.TryGetValue(priority, out var goals) || goals.Count == 0)
+                    continue;
+                
+                var priorityColor = SyndicateHelperUtility.GetPriorityColor(priority, Settings);
+                var priorityLabel = priority switch
                 {
-                    bool specialCompletes = ChoiceAccomplishesGoal(_lastDecision.SpecialText, goal.Text, _lastDecision.MemberName, _boardState);
-                    bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Text, _lastDecision.MemberName, _boardState);
-
-                    var buttonToLink = specialCompletes ? _lastDecision.SpecialButton : (interrogateCompletes ? _lastDecision.InterrogateButton : null);
-                    if (buttonToLink != null)
+                    GoalPriority.Critical => "CRITICAL",
+                    GoalPriority.Major => "MAJOR",
+                    GoalPriority.Minor => "MINOR",
+                    GoalPriority.Optimal => "OPTIMAL",
+                    _ => priority.ToString().ToUpper()
+                };
+                
+                var headerColor = new System.Numerics.Vector4(priorityColor.R / 255f, priorityColor.G / 255f, priorityColor.B / 255f, 1f);
+                ImGui.PushStyleColor(ImGuiCol.Text, headerColor);
+                
+                var defaultOpen = priority <= GoalPriority.Major;
+                if (ImGui.CollapsingHeader($"{priorityLabel} ({goals.Count})###{priorityLabel}", defaultOpen ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
+                {
+                    ImGui.PopStyleColor();
+                    
+                    foreach (var goal in goals)
                     {
-                         _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(goalRect, buttonToLink.GetClientRectCache, Settings.GoalCompletionColor.Value));
+                        var icon = Settings.ShowStatusIcons.Value ? SyndicateHelperUtility.GetGoalStatusIcon(goal.Text) + " " : "";
+                        var goalText = icon + goal.Text;
+                        
+                        var displayColor = new System.Numerics.Vector4(goal.DisplayColor.R / 255f, goal.DisplayColor.G / 255f, goal.DisplayColor.B / 255f, 1f);
+                        ImGui.PushStyleColor(ImGuiCol.Text, displayColor);
+                        ImGui.TextWrapped(goalText);
+                        ImGui.PopStyleColor();
+                        
+                        var itemMin = ImGui.GetItemRectMin();
+                        var itemMax = ImGui.GetItemRectMax();
+                        var cardRect = new RectangleF(itemMin.X, itemMin.Y, itemMax.X - itemMin.X, itemMax.Y - itemMin.Y);
+                        _goalRects.Add(cardRect);
+                        
+                        if (_lastDecision != null)
+                        {
+                            bool specialCompletes = ChoiceAccomplishesGoal(_lastDecision.SpecialText, goal.Text, _lastDecision.MemberName, _boardState);
+                            bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Text, _lastDecision.MemberName, _boardState);
+                            
+                            var buttonToLink = specialCompletes ? _lastDecision.SpecialButton : (interrogateCompletes ? _lastDecision.InterrogateButton : null);
+                            if (buttonToLink != null)
+                            {
+                                _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(cardRect, buttonToLink.GetClientRectCache, Settings.GoalCompletionColor.Value));
+                            }
+                        }
+                        
+                        ImGui.Spacing();
                     }
                 }
-                Graphics.DrawTextWithBackground(fullText, new System.Numerics.Vector2(drawPos.X + SyndicateHelperConstants.TextPadding, drawPos.Y), goal.DisplayColor, FontAlign.Left, backgroundColor);
-                drawPos.Y += SyndicateHelperConstants.LineSpacing;
+                else
+                {
+                    ImGui.PopStyleColor();
+                }
             }
-            return drawPos.Y;
+            
+            var windowHeight = ImGui.GetWindowHeight();
+            ImGui.PopStyleColor(9);
+            ImGui.End();
+            
+            return windowPos.Y + windowHeight;
         }
         
         private void GenerateStrategicGoals(SyndicatePanel betrayalWindow)
@@ -946,6 +1098,42 @@ namespace SyndicateHelper
                 _debugMessages.RemoveAt(0);
             }
             _debugMessages.Add(message);
+        }
+
+        private List<string> WrapText(string text, float maxWidth, int fontSize)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrEmpty(text))
+            {
+                result.Add(string.Empty);
+                return result;
+            }
+
+            var words = text.Split(' ');
+            var currentLine = string.Empty;
+
+            foreach (var word in words)
+            {
+                var testLine = string.IsNullOrEmpty(currentLine) ? word : currentLine + " " + word;
+                var size = Graphics.MeasureText(testLine, fontSize);
+
+                if (size.X > maxWidth && !string.IsNullOrEmpty(currentLine))
+                {
+                    result.Add(currentLine);
+                    currentLine = word;
+                }
+                else
+                {
+                    currentLine = testLine;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(currentLine))
+            {
+                result.Add(currentLine);
+            }
+
+            return result;
         }
 
         private void FindPortraitsRecursive(Element currentElement, Dictionary<string, Element> foundPortraits)

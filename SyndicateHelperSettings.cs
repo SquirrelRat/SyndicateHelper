@@ -42,6 +42,48 @@ namespace SyndicateHelper
         [Menu("Bad Choice", "Color for choices that work against your goals")]
         public ColorNode BadChoiceColor { get; set; } = new ColorNode(Color.Red);
 
+        [Menu("Animation", "Animated effects for choice frames")]
+        public EmptyNode Animation { get; set; }
+
+        [Menu("Enable Animations", "Enable animated snake energy lines on choices")]
+        public ToggleNode EnableAnimations { get; set; } = new ToggleNode(true);
+
+        [Menu("Animation Speed", "How fast the energy line travels (0.5-8.0)")]
+        public RangeNode<float> AnimationSpeed { get; set; } = new RangeNode<float>(3.0f, 0.5f, 8.0f);
+
+        [Menu("Animation Intensity", "Size of the energy line (0.3-2.0)")]
+        public RangeNode<float> AnimationIntensity { get; set; } = new RangeNode<float>(0.75f, 0.3f, 2.0f);
+
+        [Menu("Strategy Advisor", "Customize Strategy Advisor appearance")]
+        public EmptyNode StrategyAdvisor { get; set; }
+
+        [Menu("Panel Width", "Width of the Strategy Advisor panel")]
+        public RangeNode<int> AdvisorPanelWidth { get; set; } = new RangeNode<int>(350, 250, 500);
+
+        [Menu("Show Progress Summary", "Show goal completion stats at top")]
+        public ToggleNode ShowProgressSummary { get; set; } = new ToggleNode(true);
+
+        [Menu("Card Style Goals", "Use card-style layout for goals")]
+        public ToggleNode CardStyleGoals { get; set; } = new ToggleNode(true);
+
+        [Menu("Show Status Icons", "Show icons for goal types")]
+        public ToggleNode ShowStatusIcons { get; set; } = new ToggleNode(true);
+
+        [Menu("Glass Panel Effect", "Use semi-transparent glass background")]
+        public ToggleNode GlassPanelEffect { get; set; } = new ToggleNode(true);
+
+        [Menu("Collapsible Sections", "Allow collapsing goal priority groups")]
+        public ToggleNode CollapsibleSections { get; set; } = new ToggleNode(true);
+
+        [Menu("Critical Color", "Color for critical priority goals")]
+        public ColorNode CriticalColor { get; set; } = new ColorNode(new Color(255, 50, 50));
+
+        [Menu("Major Color", "Color for major priority goals")]
+        public ColorNode MajorColor { get; set; } = new ColorNode(new Color(255, 165, 0));
+
+        [Menu("Minor Color", "Color for minor priority goals")]
+        public ColorNode MinorColor { get; set; } = new ColorNode(new Color(100, 149, 237));
+
         [Menu("UI Settings", "Toggle UI elements and debug options")]
         public EmptyNode UISettings { get; set; }
 

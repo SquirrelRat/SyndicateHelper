@@ -5,6 +5,8 @@
 using System;
 using ExileCore.PoEMemory;
 using ExileCore.PoEMemory.Elements;
+using System.Numerics;
+using SharpDX;
 
 namespace SyndicateHelper
 {
@@ -53,6 +55,8 @@ namespace SyndicateHelper
         public const float BezierControlPointOffset = 100f;
         public const float BezierMinimumCurveRadius = 50f;
         public const int BezierSegmentCount = 32;
+
+        public const int SnakeSegmentCount = 60;
     }
 
     public static class SyndicateHelperUtility
@@ -141,6 +145,147 @@ namespace SyndicateHelper
         public static string GetElementTextSafely(Element element)
         {
             return element?.Text ?? string.Empty;
+        }
+
+        public static string GetGoalStatusIcon(string goalText)
+        {
+            if (string.IsNullOrEmpty(goalText)) return "*";
+            
+            var lower = goalText.ToLowerInvariant();
+            
+            if (lower.Contains("problem:")) return "[!]";
+            if (lower.Contains("rank up")) return "[^]";
+            if (lower.Contains("move") || lower.Contains("place")) return "[>]";
+            if (lower.Contains("blocking")) return "[X]";
+            if (lower.Contains("leader")) return "[L]";
+            if (lower.Contains("optimal") || lower.Contains("is leading")) return "[OK]";
+            if (lower.Contains("imprisoned") || lower.Contains("turns left")) return "[@]";
+            if (lower.Contains("friends") || lower.Contains("rivals")) return "[&]";
+            if (lower.Contains("establish")) return "[+]";
+            
+            return "*";
+        }
+
+        public static void DrawGlassPanel(
+            RectangleF rect,
+            Color backgroundColor,
+            Color borderColor,
+            Action<RectangleF, Color> drawBoxAction,
+            Action<RectangleF, Color, int> drawFrameAction,
+            int borderThickness = 1)
+        {
+            drawBoxAction(rect, backgroundColor);
+            drawFrameAction(rect, borderColor, borderThickness);
+        }
+
+        public static void DrawProgressBar(
+            RectangleF rect,
+            float progress,
+            Color fillColor,
+            Color backgroundColor,
+            Action<RectangleF, Color> drawBoxAction)
+        {
+            drawBoxAction(rect, backgroundColor);
+            
+            if (progress > 0)
+            {
+                var fillWidth = rect.Width * Math.Min(1f, progress);
+                var fillRect = new RectangleF(rect.X, rect.Y, fillWidth, rect.Height);
+                drawBoxAction(fillRect, fillColor);
+            }
+        }
+
+        public static void DrawCard(
+            RectangleF rect,
+            Color backgroundColor,
+            Color leftBorderColor,
+            Color borderColor,
+            float leftBorderWidth,
+            Action<RectangleF, Color> drawBoxAction,
+            Action<RectangleF, Color, int> drawFrameAction,
+            int borderThickness = 1)
+        {
+            drawBoxAction(rect, backgroundColor);
+            
+            var leftBorderRect = new RectangleF(rect.X, rect.Y, leftBorderWidth, rect.Height);
+            drawBoxAction(leftBorderRect, leftBorderColor);
+            
+            drawFrameAction(rect, borderColor, borderThickness);
+        }
+
+        public static Color GetPriorityColor(GoalPriority priority, SyndicateHelperSettings settings)
+        {
+            return priority switch
+            {
+                GoalPriority.Critical => settings.CriticalColor.Value,
+                GoalPriority.Major => settings.MajorColor.Value,
+                GoalPriority.Minor => settings.MinorColor.Value,
+                GoalPriority.Optimal => settings.GoalCompletionColor.Value,
+                _ => Color.White
+            };
+        }
+
+        public static void DrawSnakeEffect(
+            RectangleF rect,
+            Color baseColor,
+            float animationSpeed,
+            float animationIntensity,
+            Action<RectangleF, Color> drawBoxAction)
+        {
+            var padding = 2 * animationIntensity;
+            var lineThickness = 4 * animationIntensity;
+            var snakeLength = SyndicateHelperConstants.SnakeSegmentCount;
+
+            var currentTime = DateTime.UtcNow.TimeOfDay.TotalSeconds;
+            var snakePosition = currentTime * 100 * animationSpeed;
+
+            var pathWidth = rect.Width + padding * 2;
+            var pathHeight = rect.Height + padding * 2;
+            var perimeter = (pathWidth + pathHeight) * 2;
+            var startX = rect.X - padding;
+            var startY = rect.Y - padding;
+
+            for (int i = 0; i < snakeLength; i++)
+            {
+                var segmentOffset = (snakePosition - i) % perimeter;
+                if (segmentOffset < 0) segmentOffset += perimeter;
+
+                var fade = 1f - (i / (float)snakeLength);
+                var alpha = (byte)Math.Max(20, fade * 200);
+                
+                var brightness = 0.5f + (fade * 0.5f);
+                var r = (byte)Math.Min(255, baseColor.R * brightness);
+                var g = (byte)Math.Min(255, baseColor.G * brightness);
+                var b = (byte)Math.Min(255, baseColor.B * brightness);
+                var segmentColor = new Color(r, g, b, alpha);
+
+                float sx, sy;
+                if (segmentOffset < pathWidth)
+                {
+                    sx = startX + (float)segmentOffset;
+                    sy = startY;
+                }
+                else if (segmentOffset < pathWidth + pathHeight)
+                {
+                    sx = startX + pathWidth;
+                    sy = startY + (float)(segmentOffset - pathWidth);
+                }
+                else if (segmentOffset < pathWidth * 2 + pathHeight)
+                {
+                    sx = startX + pathWidth - (float)(segmentOffset - (pathWidth + pathHeight));
+                    sy = startY + pathHeight;
+                }
+                else
+                {
+                    sx = startX;
+                    sy = startY + pathHeight - (float)(segmentOffset - (pathWidth * 2 + pathHeight));
+                }
+
+                drawBoxAction(
+                    new RectangleF(sx - lineThickness / 2, sy - lineThickness / 2, lineThickness, lineThickness),
+                    segmentColor
+                );
+            }
         }
     }
 }
