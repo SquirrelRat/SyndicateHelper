@@ -8,9 +8,9 @@ An ExileAPI plugin that provides strategic advice and visual aids for the Betray
 
 *   **Strategy Advisor:** Displays a list of strategic goals based on your selected profile, helping you make optimal decisions during encounters.
 
-*   <img width="350" height="157" alt="image" src="https://github.com/user-attachments/assets/8cb06c17-7fac-4ed9-9abd-58391b80f7ba" />
+<img width="1094" height="467" alt="image" src="https://github.com/user-attachments/assets/7cf77c58-b119-4cd4-8542-2f64c830b1a3" />
 
-*   **Choice Highlighting:** Evaluates and scores the available choices (Interrogate, Execute, etc.), highlighting the best options based on your current goals with color-coded frames.
+*   **Choice Highlighting:** Evaluates and scores the available choices (Interrogate, Execute, etc.), highlighting the best options based on your current goals with color-coded frames and custom animations.
 *   **Board Overlay:** Shows the potential safehouse rewards for each syndicate member directly on the Betrayal board, allowing for quick assessment.
 
 *   <img width="456" height="550" alt="image" src="https://github.com/user-attachments/assets/99c48991-a150-4130-af7c-426f651a8800" />
