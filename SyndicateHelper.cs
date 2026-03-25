@@ -70,6 +70,7 @@ namespace SyndicateHelper
         
         private List<EvaluatedChoice> _lastChoices = new List<EvaluatedChoice>();
         private SyndicateDecision _lastDecision = null;
+        private HashSet<long> _highlightedButtonAddresses = new();
 
         private readonly List<CachedText> _cachedChoiceScores = new List<CachedText>();
         private readonly List<CachedText> _cachedRewardText = new List<CachedText>();
@@ -515,8 +516,10 @@ namespace SyndicateHelper
                         var bestButtonRect = bestChoice.Button.GetClientRectCache;
                         if (!bestButtonRect.IsEmpty)
                         {
-                            var scoreColor = bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
-                                             bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
+                            var scoreColor = _highlightedButtonAddresses.Contains(bestChoice.Button.Address)
+                                ? Settings.GoalCompletionColor.Value
+                                : bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
+                                  bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
 
                             SyndicateHelperUtility.DrawSnakeEffect(
                                 bestButtonRect,
@@ -628,7 +631,7 @@ namespace SyndicateHelper
         {
             if (_lastDecision == null || _lastChoices.Count == 0) return;
 
-            var highlightedButtonAddresses = new HashSet<long>();
+            _highlightedButtonAddresses.Clear();
 
             var sortedGoals = _strategicGoals.OrderBy(g => g.Priority).ToList();
             for (int i = 0; i < sortedGoals.Count && i < _goalRects.Count; i++)
@@ -645,7 +648,7 @@ namespace SyndicateHelper
                 {
                     _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(goalRect, Settings.GoalCompletionColor.Value));
                     _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonToHighlight.GetClientRectCache, Settings.GoalCompletionColor.Value));
-                    highlightedButtonAddresses.Add(buttonToHighlight.Address);
+                    _highlightedButtonAddresses.Add(buttonToHighlight.Address);
                 }
             }
 
@@ -663,7 +666,7 @@ namespace SyndicateHelper
                     buttonRect.Right + SyndicateHelperConstants.ScoreTextOffsetX,
                     buttonRect.Center.Y - textSize.Y / 2 - SyndicateHelperConstants.ScoreTextOffsetY);
 
-                if (highlightedButtonAddresses.Contains(choice.Button.Address))
+                if (_highlightedButtonAddresses.Contains(choice.Button.Address))
                 {
                     _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = Settings.GoalCompletionColor.Value });
                     continue;
@@ -689,8 +692,10 @@ namespace SyndicateHelper
                 var bestButtonRect = bestChoice.Button.GetClientRectCache;
                 if (!bestButtonRect.IsEmpty)
                 {
-                    var scoreColor = bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
-                                     bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
+                    var scoreColor = _highlightedButtonAddresses.Contains(bestChoice.Button.Address)
+                        ? Settings.GoalCompletionColor.Value
+                        : bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
+                          bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
 
                     SyndicateHelperUtility.DrawSnakeEffect(
                         bestButtonRect,
