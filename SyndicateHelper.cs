@@ -95,6 +95,10 @@ namespace SyndicateHelper
 
         private int _selectedSettingsTab = 0;
 
+        private SyndicateDivision _availableSafehouseDivision = SyndicateDivision.None;
+        private Element _safehouseButtonElement;
+        private RectangleF _safehouseButtonRect = RectangleF.Empty;
+
         private void CycleStrategy(int direction)
         {
             var strategyNames = SyndicateStrategies.Strategies.Select(s => s.Name).ToList();
@@ -115,6 +119,104 @@ namespace SyndicateHelper
             Settings.StrategyProfile.Value = strategyNames[newIndex];
             Settings.ApplyStrategyGoals(Settings.StrategyProfile.Value);
             _isBoardStateDirty = true;
+        }
+
+        private bool IsValidRect(RectangleF rect)
+        {
+            if (rect.IsEmpty) return false;
+            if (rect.Width <= 0 || rect.Height <= 0) return false;
+            if (float.IsNaN(rect.X) || float.IsNaN(rect.Y)) return false;
+            if (float.IsInfinity(rect.X) || float.IsInfinity(rect.Y)) return false;
+
+            const float minBound = -2000f;
+            const float maxBound = 8000f;
+            
+            if (rect.X < minBound || rect.X > maxBound) return false;
+            if (rect.Y < minBound || rect.Y > maxBound) return false;
+            
+            return true;
+        }
+
+        private SyndicateDivision DetectAvailableSafehouse(SyndicatePanel betrayalWindow)
+        {
+            if (betrayalWindow?.SyndicateStates == null)
+                return SyndicateDivision.None;
+
+            foreach (var memberState in betrayalWindow.SyndicateStates)
+            {
+                if (memberState == null) continue;
+                
+                try
+                {
+                    if (memberState.Intel >= 100)
+                    {
+                        var job = memberState.Job;
+                        if (job != null && Enum.TryParse<SyndicateDivision>(job.Name, out var division))
+                        {
+                            return division;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return SyndicateDivision.None;
+        }
+
+        private Element FindSafehouseButton(SyndicatePanel betrayalWindow)
+        {
+            if (betrayalWindow == null) return null;
+
+            return FindSafehouseButtonRecursive(betrayalWindow);
+        }
+
+        private Element FindSafehouseButtonRecursive(Element element)
+        {
+            if (element == null) return null;
+
+            var text = SyndicateHelperUtility.GetElementTextSafely(element);
+
+            if (!string.IsNullOrEmpty(text))
+            {
+                var lowerText = text.ToLowerInvariant();
+                bool isRaidButton = lowerText.Contains("raid") ||
+                                    lowerText.Contains("safehouse") ||
+                                    lowerText.Contains("enter") ||
+                                    lowerText.Contains("attack") ||
+                                    lowerText.Contains("assault");
+
+                if (isRaidButton && element.IsVisible)
+                {
+                    return element;
+                }
+            }
+
+            // Search children
+            foreach (var child in element.Children)
+            {
+                var result = FindSafehouseButtonRecursive(child);
+                if (result != null) return result;
+            }
+
+            return null;
+        }
+
+        private bool IsValidButton(Element button)
+        {
+            if (button == null) return false;
+            if (!button.IsVisible) return false;
+            
+            try
+            {
+                var rect = button.GetClientRectCache;
+                return IsValidRect(rect);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public override bool Initialise()
@@ -452,6 +554,19 @@ namespace SyndicateHelper
 
             ProcessBoardOverlays(betrayalWindow);
 
+            _availableSafehouseDivision = DetectAvailableSafehouse(betrayalWindow);
+            if (_availableSafehouseDivision != SyndicateDivision.None)
+            {
+                _safehouseButtonElement = FindSafehouseButton(betrayalWindow);
+                _safehouseButtonRect = _safehouseButtonElement != null && _safehouseButtonElement.IsVisible
+                    ? _safehouseButtonElement.GetClientRectCache 
+                    : RectangleF.Empty;
+            }
+            else
+            {
+                _safehouseButtonElement = null;
+                _safehouseButtonRect = RectangleF.Empty;
+            }
 
             if (Input.IsKeyDown(Keys.LButton) && (DateTime.Now - _lastClickTime).TotalMilliseconds > SyndicateHelperConstants.MouseClickDebounceMs)
             {
@@ -505,7 +620,28 @@ namespace SyndicateHelper
             {
                 foreach (var rect in _rectanglesToDraw)
                 {
-                    Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value);
+                    // Validate rectangle before drawing to prevent artifacts at (0,0)
+                    if (IsValidRect(rect.Item1))
+                    {
+                        Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value);
+                    }
+                }
+
+                // Draw safehouse button highlight if available
+                if (_availableSafehouseDivision != SyndicateDivision.None && IsValidRect(_safehouseButtonRect))
+                {
+                    Graphics.DrawFrame(_safehouseButtonRect, Settings.GoodChoiceColor.Value, Settings.FrameThickness.Value + 1);
+                    
+                    if (Settings.EnableAnimations.Value)
+                    {
+                        SyndicateHelperUtility.DrawSnakeEffect(
+                            _safehouseButtonRect,
+                            Settings.GoodChoiceColor.Value,
+                            Settings.AnimationSpeed.Value,
+                            Settings.AnimationIntensity.Value,
+                            Graphics.DrawBox
+                        );
+                    }
                 }
 
                 if (Settings.EnableAnimations.Value)
@@ -514,7 +650,7 @@ namespace SyndicateHelper
                     if (bestChoice.Button != null && bestChoice.Button.IsVisible)
                     {
                         var bestButtonRect = bestChoice.Button.GetClientRectCache;
-                        if (!bestButtonRect.IsEmpty)
+                        if (IsValidRect(bestButtonRect))
                         {
                             var scoreColor = _highlightedButtonAddresses.Contains(bestChoice.Button.Address)
                                 ? Settings.GoalCompletionColor.Value
@@ -536,6 +672,10 @@ namespace SyndicateHelper
                 {
                     foreach (var link in _linksToDraw)
                     {
+                        // Validate both rectangles before drawing curve
+                        if (!IsValidRect(link.Item1) || !IsValidRect(link.Item2))
+                            continue;
+
                         var goalAnchor = new System.Numerics.Vector2(link.Item1.Right, link.Item1.Top);
                         var buttonAnchor = new System.Numerics.Vector2(link.Item2.Left, link.Item2.Center.Y);
                         SyndicateHelperUtility.DrawBezierCurve(
@@ -586,7 +726,11 @@ namespace SyndicateHelper
                     {
                         if (portrait?.GetClientRectCache != null)
                         {
-                            Graphics.DrawFrame(portrait.GetClientRectCache, Color.Cyan, 1);
+                            var portraitRect = portrait.GetClientRectCache;
+                            if (IsValidRect(portraitRect))
+                            {
+                                Graphics.DrawFrame(portraitRect, Color.Cyan, 1);
+                            }
                         }
                     }
                 }
@@ -597,9 +741,21 @@ namespace SyndicateHelper
                     {
                         if (relation?.GetClientRectCache != null)
                         {
-                            Graphics.DrawFrame(relation.GetClientRectCache, Color.Magenta, 1);
+                            var relationRect = relation.GetClientRectCache;
+                            if (IsValidRect(relationRect))
+                            {
+                                Graphics.DrawFrame(relationRect, Color.Magenta, 1);
+                            }
                         }
                     }
+                }
+
+                if (_availableSafehouseDivision != SyndicateDivision.None)
+                {
+                    a.Y += SyndicateHelperConstants.DebugLineSpacing;
+                    Graphics.DrawTextWithBackground(
+                        $"Safehouse ready: {_availableSafehouseDivision}",
+                        a, Color.LimeGreen, FontAlign.Left, backgroundColor);
                 }
             }
             }
@@ -644,11 +800,15 @@ namespace SyndicateHelper
 
                 var buttonToHighlight = specialCompletes ? _lastDecision.SpecialButton : (interrogateCompletes ? _lastDecision.InterrogateButton : null);
 
-                if (buttonToHighlight != null && buttonToHighlight.IsVisible)
+                if (IsValidButton(buttonToHighlight))
                 {
-                    _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(goalRect, Settings.GoalCompletionColor.Value));
-                    _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonToHighlight.GetClientRectCache, Settings.GoalCompletionColor.Value));
-                    _highlightedButtonAddresses.Add(buttonToHighlight.Address);
+                    var buttonRect = buttonToHighlight.GetClientRectCache;
+                    if (IsValidRect(goalRect) && IsValidRect(buttonRect))
+                    {
+                        _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(goalRect, Settings.GoalCompletionColor.Value));
+                        _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, Settings.GoalCompletionColor.Value));
+                        _highlightedButtonAddresses.Add(buttonToHighlight.Address);
+                    }
                 }
             }
 
@@ -658,7 +818,8 @@ namespace SyndicateHelper
             foreach (var choice in _lastChoices)
             {
                 var buttonRect = choice.Button?.GetClientRectCache ?? RectangleF.Empty;
-                if (buttonRect == RectangleF.Empty) continue;
+                if (!IsValidRect(buttonRect)) continue;
+                if (!choice.Button.IsVisible) continue;
 
                 var scoreText = $"[{choice.Score}]";
                 var textSize = Graphics.MeasureText(scoreText, SyndicateHelperConstants.DefaultFontSize);
@@ -687,10 +848,10 @@ namespace SyndicateHelper
                 }
             }
 
-            if (Settings.EnableAnimations.Value && bestChoice.Button != null && bestChoice.Button.IsVisible)
+            if (Settings.EnableAnimations.Value && IsValidButton(bestChoice.Button))
             {
                 var bestButtonRect = bestChoice.Button.GetClientRectCache;
-                if (!bestButtonRect.IsEmpty)
+                if (IsValidRect(bestButtonRect))
                 {
                     var scoreColor = _highlightedButtonAddresses.Contains(bestChoice.Button.Address)
                         ? Settings.GoalCompletionColor.Value
@@ -1049,6 +1210,8 @@ namespace SyndicateHelper
                 }
 
                 var rect = portraitElement.GetClientRectCache;
+                if (!IsValidRect(rect)) continue;
+
                 var textSize = Graphics.MeasureText(rewardText, SyndicateHelperConstants.DefaultFontSize);
                 var textPos = new System.Numerics.Vector2(rect.Center.X - textSize.X / 2, rect.Bottom + 2);
                 _cachedRewardText.Add(new CachedText { Text = rewardText, Position = textPos, Color = textColor });
