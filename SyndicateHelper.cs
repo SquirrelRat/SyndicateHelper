@@ -55,13 +55,6 @@ namespace SyndicateHelper
         private readonly List<string> _debugMessages = new List<string>();
         private readonly HashSet<SyndicateDivision> _targetDivisions = new HashSet<SyndicateDivision>();
         
-        private readonly Dictionary<GoalPriority, bool> _collapsedSections = new()
-        {
-            [GoalPriority.Critical] = false,
-            [GoalPriority.Major] = false,
-            [GoalPriority.Minor] = true,
-            [GoalPriority.Optimal] = true
-        };
         private bool _advisorMinimized = false;
 
         private Dictionary<string, SyndicateMemberState> _boardState = new Dictionary<string, SyndicateMemberState>();
@@ -98,6 +91,7 @@ namespace SyndicateHelper
         private SyndicateDivision _availableSafehouseDivision = SyndicateDivision.None;
         private Element _safehouseButtonElement;
         private RectangleF _safehouseButtonRect = RectangleF.Empty;
+        private readonly object _drawLock = new object();
 
         private void CycleStrategy(int direction)
         {
@@ -125,11 +119,12 @@ namespace SyndicateHelper
         {
             if (rect.IsEmpty) return false;
             if (rect.Width <= 0 || rect.Height <= 0) return false;
-            if (float.IsNaN(rect.X) || float.IsNaN(rect.Y)) return false;
-            if (float.IsInfinity(rect.X) || float.IsInfinity(rect.Y)) return false;
+            if (float.IsNaN(rect.X) || float.IsNaN(rect.Y) || float.IsNaN(rect.Width) || float.IsNaN(rect.Height)) return false;
+            if (float.IsInfinity(rect.X) || float.IsInfinity(rect.Y) || float.IsInfinity(rect.Width) || float.IsInfinity(rect.Height)) return false;
 
-            const float minBound = -2000f;
-            const float maxBound = 8000f;
+            // Use viewport-relative bounds — HUD runs on ultrawide/negative offsets, so be permissive.
+            const float minBound = -5000f;
+            const float maxBound = 12000f;
             
             if (rect.X < minBound || rect.X > maxBound) return false;
             if (rect.Y < minBound || rect.Y > maxBound) return false;
@@ -151,7 +146,7 @@ namespace SyndicateHelper
                     if (memberState.Intel >= 100)
                     {
                         var job = memberState.Job;
-                        if (job != null && Enum.TryParse<SyndicateDivision>(job.Name, out var division))
+                        if (job != null && Enum.TryParse<SyndicateDivision>(job.Name, true, out var division) && division != SyndicateDivision.None)
                         {
                             return division;
                         }
@@ -178,22 +173,22 @@ namespace SyndicateHelper
 
             var text = SyndicateHelperUtility.GetElementTextSafely(element);
 
-            if (!string.IsNullOrEmpty(text))
+            if (!string.IsNullOrEmpty(text) && element.IsVisible)
             {
                 var lowerText = text.ToLowerInvariant();
                 bool isRaidButton = lowerText.Contains("raid") ||
                                     lowerText.Contains("safehouse") ||
-                                    lowerText.Contains("enter") ||
-                                    lowerText.Contains("attack") ||
-                                    lowerText.Contains("assault");
+                                    lowerText.Contains("assault") ||
+                                    lowerText.Contains("attack");
+                // "enter" only counts when paired with safehouse/syndicate to avoid Enter Hideout false positives
+                if (!isRaidButton && lowerText.Contains("enter") && (lowerText.Contains("safehouse") || lowerText.Contains("syndicate")))
+                    isRaidButton = true;
 
-                if (isRaidButton && element.IsVisible)
-                {
+                if (isRaidButton)
                     return element;
-                }
             }
 
-            // Search children
+            if (element.Children == null) return null;
             foreach (var child in element.Children)
             {
                 var result = FindSafehouseButtonRecursive(child);
@@ -520,12 +515,15 @@ namespace SyndicateHelper
             }
 
 
-            _linksToDraw.Clear();
-            _debugMessages.Clear();
-            _rectanglesToDraw.Clear();
-            _cachedChoiceScores.Clear();
-            _cachedRewardText.Clear();
-            _goalRects.Clear();
+            lock (_drawLock)
+            {
+                _linksToDraw.Clear();
+                _debugMessages.Clear();
+                _rectanglesToDraw.Clear();
+                _cachedChoiceScores.Clear();
+                _cachedRewardText.Clear();
+                _goalRects.Clear();
+            }
 
             if (_isBoardStateDirty)
             {
@@ -547,12 +545,12 @@ namespace SyndicateHelper
             var eventDataElement = betrayalWindow.BetrayalEventData as BetrayalEventData;
             _lastDecision = eventDataElement != null && eventDataElement.IsVisible ? ParseDecision(eventDataElement) : null;
             
-            if (_lastDecision != null)
+            lock (_drawLock)
             {
-                ProcessEncounterChoices(eventDataElement);
+                if (_lastDecision != null)
+                    ProcessEncounterChoices(eventDataElement);
+                ProcessBoardOverlays(betrayalWindow);
             }
-
-            ProcessBoardOverlays(betrayalWindow);
 
             _availableSafehouseDivision = DetectAvailableSafehouse(betrayalWindow);
             if (_availableSafehouseDivision != SyndicateDivision.None)
@@ -611,6 +609,19 @@ namespace SyndicateHelper
                 var advisorBottomY = RenderStrategyAdvisorImGui(betrayalWindow);
                 var backgroundColor = new Color((byte)0, (byte)0, (byte)0, (byte)Settings.BackgroundAlpha.Value);
 
+            // Snapshot draw lists under lock — avoids Tick/Race "Collection was modified"
+            List<Tuple<RectangleF, Color>> rectsSnap; List<Tuple<RectangleF, RectangleF, Color>> linksSnap;
+            List<CachedText> rewardsSnap; List<CachedText> scoresSnap;
+            List<EvaluatedChoice> choicesSnap;
+            lock (_drawLock)
+            {
+                rectsSnap = new List<Tuple<RectangleF, Color>>(_rectanglesToDraw);
+                linksSnap = new List<Tuple<RectangleF, RectangleF, Color>>(_linksToDraw);
+                rewardsSnap = new List<CachedText>(_cachedRewardText);
+                scoresSnap = new List<CachedText>(_cachedChoiceScores);
+                choicesSnap = new List<EvaluatedChoice>(_lastChoices);
+            }
+
             if (_lastDecision != null)
             {
                 ProcessChoiceHighlights();
@@ -618,7 +629,7 @@ namespace SyndicateHelper
 
             if (Settings.ShowButtons.Value)
             {
-                foreach (var rect in _rectanglesToDraw)
+                foreach (var rect in rectsSnap)
                 {
                     // Validate rectangle before drawing to prevent artifacts at (0,0)
                     if (IsValidRect(rect.Item1))
@@ -646,7 +657,7 @@ namespace SyndicateHelper
 
                 if (Settings.EnableAnimations.Value)
                 {
-                    var bestChoice = _lastChoices.OrderByDescending(c => c.Score).FirstOrDefault();
+                    var bestChoice = choicesSnap.OrderByDescending(c => c.Score).FirstOrDefault();
                     if (bestChoice.Button != null && bestChoice.Button.IsVisible)
                     {
                         var bestButtonRect = bestChoice.Button.GetClientRectCache;
@@ -670,7 +681,7 @@ namespace SyndicateHelper
 
                 if (Settings.ShowCurves.Value)
                 {
-                    foreach (var link in _linksToDraw)
+                    foreach (var link in linksSnap)
                     {
                         // Validate both rectangles before drawing curve
                         if (!IsValidRect(link.Item1) || !IsValidRect(link.Item2))
@@ -690,18 +701,14 @@ namespace SyndicateHelper
 
             if (Settings.ShowGoalInfo.Value)
             {
-                foreach (var cachedText in _cachedRewardText)
-                {
+                foreach (var cachedText in rewardsSnap)
                     Graphics.DrawTextWithBackground(cachedText.Text, cachedText.Position, cachedText.Color, FontAlign.Left, backgroundColor);
-                }
             }
 
             if (Settings.ShowButtons.Value)
             {
-                foreach (var cachedText in _cachedChoiceScores)
-                {
+                foreach (var cachedText in scoresSnap)
                     Graphics.DrawTextWithBackground(cachedText.Text, cachedText.Position, cachedText.Color, FontAlign.Left, backgroundColor);
-                }
             }
 
             if (Settings.EnableDebugDrawing.Value)
@@ -885,35 +892,51 @@ namespace SyndicateHelper
                 .Where(l => l?.Target != null)
                 .Select(l => l.Target.Name)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
-                .ToHashSet();
-
-            if (leaders == null)
-            {
-                leaders = new HashSet<string>();
-            }
+                .ToHashSet() ?? new HashSet<string>();
 
             foreach (var memberState in betrayalWindow.SyndicateStates)
             {
-                var memberName = memberState?.Target?.Name;
+                if (memberState == null) continue;
+                var memberName = memberState.Target?.Name;
                 if (string.IsNullOrWhiteSpace(memberName)) continue;
 
-                var rankName = memberState?.Rank?.Name;
-                var jobName = memberState?.Job?.Name;
+                SyndicateDivision division = SyndicateDivision.None;
+                var jobName = memberState.Job?.Name;
+                if (!string.IsNullOrWhiteSpace(jobName))
+                    Enum.TryParse(jobName, true, out division);
 
-                if (Enum.TryParse(jobName, out SyndicateDivision division) ||
-                    jobName == "None" ||
-                    !string.IsNullOrWhiteSpace(rankName))
+                var rankName = memberState.Rank?.Name ?? string.Empty;
+
+                // Ghost None bug: skip unassigned members from board (Division.None / no rank) — they are bench, not board.
+                bool onBoard = division != SyndicateDivision.None || !string.IsNullOrWhiteSpace(rankName);
+                if (!onBoard) continue;
+
+                var state = new SyndicateMemberState
                 {
-                    var state = new SyndicateMemberState
-                    {
-                        Name = memberName,
-                        Rank = rankName ?? string.Empty,
-                        Division = division,
-                        IsLeader = leaders.Contains(memberName)
-                    };
-                    newBoardState[memberName] = state;
+                    Name = memberName,
+                    Rank = rankName,
+                    Division = division,
+                    IsLeader = leaders != null && leaders.Contains(memberName)
+                };
+                newBoardState[memberName] = state;
 
-                    if (IsMemberImprisoned(memberState?.UIElement)) prisonCount++;
+                if (IsMemberImprisoned(memberState.UIElement)) prisonCount++;
+            }
+
+            // Fallback: also seed links from memory Relations list (covers off-screen/visible divergence)
+            foreach (var memberState in betrayalWindow.SyndicateStates)
+            {
+                if (memberState?.Target == null || memberState.Relations == null) continue;
+                var name = memberState.Target.Name;
+                if (!newBoardState.TryGetValue(name, out var s)) continue;
+                foreach (var rel in memberState.Relations)
+                {
+                    var other = rel?.Target?.Name;
+                    if (string.IsNullOrWhiteSpace(other) || !newBoardState.ContainsKey(other)) continue;
+                    // Without explicit Trusted/Rival enum in memory, treat as generic link for now;
+                    // prefer Friends bucket so scoring still sees connection (conservative).
+                    if (!s.Friends.Contains(other) && !s.Rivals.Contains(other))
+                        s.Friends.Add(other);
                 }
             }
 
@@ -922,29 +945,28 @@ namespace SyndicateHelper
 
             foreach (var relElement in _cachedRelationshipElements)
             {
-                var text = relElement?.Text;
+                if (relElement == null) continue;
+                var text = relElement.Text;
                 if (string.IsNullOrWhiteSpace(text)) continue;
 
                 var match = Regex.Match(text, @"(.+?)\s+(is friends with|is rivals with)\s+(.+)", RegexOptions.IgnoreCase);
-                if (match.Success)
-                {
-                    var member1Name = match.Groups[1].Value.Trim();
-                    var relationshipType = match.Groups[2].Value.Trim();
-                    var member2Name = match.Groups[3].Value.Trim();
+                if (!match.Success) continue;
+                var member1Name = match.Groups[1].Value.Trim();
+                var relationshipType = match.Groups[2].Value.Trim();
+                var member2Name = match.Groups[3].Value.Trim();
 
-                    if (newBoardState.TryGetValue(member1Name, out var member1State) &&
-                        newBoardState.TryGetValue(member2Name, out var member2State))
+                if (newBoardState.TryGetValue(member1Name, out var member1State) &&
+                    newBoardState.TryGetValue(member2Name, out var member2State))
+                {
+                    if (relationshipType.Equals("is friends with", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (relationshipType.Equals("is friends with", StringComparison.OrdinalIgnoreCase))
-                        {
-                            member1State.Friends.Add(member2Name);
-                            member2State.Friends.Add(member1Name);
-                        }
-                        else if (relationshipType.Equals("is rivals with", StringComparison.OrdinalIgnoreCase))
-                        {
-                            member1State.Rivals.Add(member2Name);
-                            member2State.Rivals.Add(member1Name);
-                        }
+                        member1State.Friends.Add(member2Name);
+                        member2State.Friends.Add(member1Name);
+                    }
+                    else if (relationshipType.Equals("is rivals with", StringComparison.OrdinalIgnoreCase))
+                    {
+                        member1State.Rivals.Add(member2Name);
+                        member2State.Rivals.Add(member1Name);
                     }
                 }
             }
@@ -952,18 +974,24 @@ namespace SyndicateHelper
 
         private bool IsMemberImprisoned(Element element)
         {
-            if (element == null || !element.IsVisible) return false;
+            if (element == null) return false;
 
-            var text = SyndicateHelperUtility.GetElementTextSafely(element);
-            if (text.Contains("Turn Left", StringComparison.OrdinalIgnoreCase) ||
-                text.Contains("Turns Left", StringComparison.OrdinalIgnoreCase))
+            var stack = new Stack<Element>();
+            var visited = new HashSet<IntPtr>();
+            stack.Push(element);
+            while (stack.Count > 0)
             {
-                return true;
-            }
-
-            foreach (var child in element?.Children)
-            {
-                if (IsMemberImprisoned(child)) return true;
+                var cur = stack.Pop();
+                if (cur == null) continue;
+                // Avoid cycles in element graph
+                try { if (!visited.Add((IntPtr)cur.GetHashCode())) continue; } catch { }
+                var text = SyndicateHelperUtility.GetElementTextSafely(cur);
+                if (!string.IsNullOrEmpty(text) && (text.Contains("Turn Left", StringComparison.OrdinalIgnoreCase) || text.Contains("Turns Left", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+                var children = cur.Children;
+                if (children == null) continue;
+                foreach (var child in children)
+                    if (child != null) stack.Push(child);
             }
             return false;
         }
@@ -988,6 +1016,28 @@ namespace SyndicateHelper
             
             var windowFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysAutoResize;
             
+            // Minimized state — draw tiny bar so the existing click handler can restore
+            if (_advisorMinimized)
+            {
+                windowFlags |= ImGuiWindowFlags.NoTitleBar;
+                ImGui.SetNextWindowSize(new System.Numerics.Vector2(panelWidth, 32), ImGuiCond.Always);
+                if (!ImGui.Begin("Strategy Advisor##min", windowFlags))
+                {
+                    ImGui.PopStyleColor(9);
+                    ImGui.End();
+                    return windowPos.Y + 32;
+                }
+                ImGui.TextDisabled("Syndicate Helper  [click - to expand]");
+                _minimizeButtonRect = new RectangleF(ImGui.GetWindowPos().X, ImGui.GetWindowPos().Y, ImGui.GetWindowSize().X, ImGui.GetWindowSize().Y);
+                // keep other hit rects empty while minimized
+                _leftButtonRect = RectangleF.Empty;
+                _rightButtonRect = RectangleF.Empty;
+                ImGui.PopStyleColor(9);
+                var h = ImGui.GetWindowSize().Y;
+                ImGui.End();
+                return windowPos.Y + h + 4;
+            }
+
             if (!ImGui.Begin("Strategy Advisor", windowFlags))
             {
                 ImGui.PopStyleColor(9);
@@ -1221,35 +1271,36 @@ namespace SyndicateHelper
         private bool ChoiceAccomplishesGoal(string choiceText, string goalText, string memberInDecision, Dictionary<string, SyndicateMemberState> boardState)
         {
             if (string.IsNullOrEmpty(choiceText) || string.IsNullOrEmpty(goalText)) return false;
-            if (goalText.Contains("Rank up"))
+            // Rank up: goalText is "Rank up {Member} in {Division}" — member may contain spaces (It That Fled)
+            if (goalText.StartsWith("Rank up ", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = goalText.Split(' ');
-                if (parts.Length < 3) return false;
-                var targetMember = parts[2];
-                return memberInDecision == targetMember && choiceText.IndexOf("rank", StringComparison.OrdinalIgnoreCase) >= 0;
+                var m = Regex.Match(goalText, @"^Rank up\s+(.+?)\s+in\s+", RegexOptions.IgnoreCase);
+                if (!m.Success) return false;
+                var targetMember = m.Groups[1].Value.Trim();
+                return string.Equals(memberInDecision, targetMember, StringComparison.OrdinalIgnoreCase) && choiceText.IndexOf("rank", StringComparison.OrdinalIgnoreCase) >= 0;
             }
-            if (goalText.StartsWith("Problem:"))
+            if (goalText.StartsWith("Problem:", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = goalText.Split(' ');
-                if (parts.Length < 2) return false;
-                var targetMember = parts[1];
-                return memberInDecision == targetMember && choiceText.Equals("Interrogate", StringComparison.OrdinalIgnoreCase);
+                var m = Regex.Match(goalText, @"^Problem:\s*(.+?)\s*$", RegexOptions.IgnoreCase);
+                if (!m.Success) return false;
+                var targetMember = m.Groups[1].Value.Trim();
+                return string.Equals(memberInDecision, targetMember, StringComparison.OrdinalIgnoreCase) && choiceText.Equals("Interrogate", StringComparison.OrdinalIgnoreCase);
             }
-             if (goalText.Contains("Establish a leader"))
+            if (goalText.Contains("Establish a leader", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = goalText.Split(' ');
-                if (parts.Length < 5) return false;
-                var divisionName = parts[4];
-                return choiceText.Contains("rank", StringComparison.OrdinalIgnoreCase) && boardState.TryGetValue(memberInDecision, out var state) && state.Division.ToString() == divisionName;
+                var m = Regex.Match(goalText, @"Establish a leader in\s+(.+?)\s*$", RegexOptions.IgnoreCase);
+                if (!m.Success) return false;
+                var divisionName = m.Groups[1].Value.Trim();
+                return choiceText.IndexOf("rank", StringComparison.OrdinalIgnoreCase) >= 0 && boardState.TryGetValue(memberInDecision, out var state) && string.Equals(state.Division.ToString(), divisionName, StringComparison.OrdinalIgnoreCase);
             }
-            if (goalText.StartsWith("Move") || goalText.StartsWith("Place"))
+            if (goalText.StartsWith("Move", StringComparison.OrdinalIgnoreCase) || goalText.StartsWith("Place", StringComparison.OrdinalIgnoreCase))
             {
-                var match = Regex.Match(goalText, @"(Move|Place) (.+?) to (.+?)( |to|$)");
+                var match = Regex.Match(goalText, @"^(Move|Place)\s+(.+?)\s+to\s+(.+?)(?:\s+to\b|$)", RegexOptions.IgnoreCase);
                 if (match.Success && match.Groups.Count >= 4)
                 {
                     var targetMember = match.Groups[2].Value.Trim();
                     var desiredDivision = match.Groups[3].Value.Trim();
-                    return choiceText.Contains(targetMember, StringComparison.OrdinalIgnoreCase) && choiceText.Contains($"moves to {desiredDivision}", StringComparison.OrdinalIgnoreCase);
+                    return choiceText.IndexOf(targetMember, StringComparison.OrdinalIgnoreCase) >= 0 && choiceText.IndexOf($"moves to {desiredDivision}", StringComparison.OrdinalIgnoreCase) >= 0;
                 }
             }
             return false;
@@ -1268,34 +1319,14 @@ namespace SyndicateHelper
             _debugMessages.Add(message);
         }
 
-        private List<string> WrapText(string text, float maxWidth, int fontSize)
+        // WrapText removed — unused (was splitting on ' ' with per-word MeasureText)
+
+        private List<string> _LegacyWrapText(string text, float maxWidth, int fontSize)
         {
             var result = new List<string>();
-            if (string.IsNullOrEmpty(text))
-            {
-                result.Add(string.Empty);
-                return result;
-            }
-
-            var words = text.Split(' ');
-            var currentLine = string.Empty;
-
-            foreach (var word in words)
-            {
-                var testLine = string.IsNullOrEmpty(currentLine) ? word : currentLine + " " + word;
-                var size = Graphics.MeasureText(testLine, fontSize);
-
-                if (size.X > maxWidth && !string.IsNullOrEmpty(currentLine))
-                {
-                    result.Add(currentLine);
-                    currentLine = word;
-                }
-                else
-                {
-                    currentLine = testLine;
-                }
-            }
-
+            if (string.IsNullOrEmpty(text)) { result.Add(string.Empty); return result; }
+            var words = text.Split(' '); var currentLine = string.Empty;
+            foreach (var word in words) { var testLine = string.IsNullOrEmpty(currentLine) ? word : currentLine + " " + word; var size = Graphics.MeasureText(testLine, fontSize); if (size.X > maxWidth && !string.IsNullOrEmpty(currentLine)) { result.Add(currentLine); currentLine = word; } else currentLine = testLine; }
             if (!string.IsNullOrEmpty(currentLine))
             {
                 result.Add(currentLine);
@@ -1309,25 +1340,31 @@ namespace SyndicateHelper
             if (currentElement == null) return;
 
             var text = SyndicateHelperUtility.GetElementTextSafely(currentElement);
-            var memberName = SyndicateMemberNames.FirstOrDefault(name =>
-                text.Equals(name, StringComparison.Ordinal));
-
-            if (memberName != null &&
-                !foundPortraits.ContainsKey(memberName) &&
-                currentElement.Parent != null)
+            if (!string.IsNullOrEmpty(text))
             {
-                foundPortraits[memberName] = currentElement.Parent;
-                return;
+                // Match against "Aisling (Captain)" style — longest name first avoids Rin substring false positives
+                string best = null;
+                foreach (var name in SyndicateMemberNames.OrderByDescending(n => n.Length))
+                {
+                    if (text.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        best = name;
+                        break;
+                    }
+                }
+                if (best != null && !foundPortraits.ContainsKey(best) && currentElement.Parent != null)
+                    foundPortraits[best] = currentElement.Parent;
             }
 
-            foreach (var child in currentElement.Children)
-            {
+            var children = currentElement.Children;
+            if (children == null) return;
+            foreach (var child in children)
                 FindPortraitsRecursive(child, foundPortraits);
-            }
         }
 
         private SyndicateDecision ParseDecision(BetrayalEventData eventDataElement)
         {
+            if (eventDataElement == null) return null;
             var memberName = FindNameInChoiceDialog(eventDataElement);
             if (string.IsNullOrWhiteSpace(memberName)) return null;
             return new SyndicateDecision { MemberName = memberName, InterrogateButton = eventDataElement.InterrogateButton, SpecialButton = eventDataElement.SpecialButton, ReleaseButton = eventDataElement.ReleaseButton, InterrogateText = "Interrogate", SpecialText = eventDataElement.EventText ?? "" };
@@ -1336,12 +1373,19 @@ namespace SyndicateHelper
         private string FindNameInChoiceDialog(Element searchRoot)
         {
             if (searchRoot == null) return null;
-            if (searchRoot.Text != null)
+            var t = SyndicateHelperUtility.GetElementTextSafely(searchRoot);
+            if (!string.IsNullOrEmpty(t))
             {
-                var memberName = SyndicateMemberNames.FirstOrDefault(name => searchRoot.Text.Contains(name));
-                if (memberName != null) return memberName;
+                // Longest first prevents Rin/Vagan substring collisions; case-insensitive
+                foreach (var name in SyndicateMemberNames.OrderByDescending(n => n.Length))
+                {
+                    if (t.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return name;
+                }
             }
-            foreach (var child in searchRoot.Children)
+            var children = searchRoot.Children;
+            if (children == null) return null;
+            foreach (var child in children)
             {
                 var foundName = FindNameInChoiceDialog(child);
                 if (foundName != null) return foundName;
@@ -1386,16 +1430,16 @@ namespace SyndicateHelper
             if (currentElement == null) return;
 
             var text = SyndicateHelperUtility.GetElementTextSafely(currentElement);
-            if (text.Contains("is friends with", StringComparison.OrdinalIgnoreCase) ||
-                text.Contains("is rivals with", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(text) && (text.IndexOf("is friends with", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("is rivals with", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 relationshipElements.Add(currentElement);
             }
 
-            foreach (var child in currentElement.Children)
-            {
+            var children = currentElement.Children;
+            if (children == null) return;
+            foreach (var child in children)
                 FindRelationshipElementsRecursive(child, relationshipElements);
-            }
         }
     }
 }

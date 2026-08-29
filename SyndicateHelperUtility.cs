@@ -3,6 +3,7 @@
 // Contains helper methods for parsing goals, drawing Bezier curves, and safe element access.
 
 using System;
+using System.Collections.Generic;
 using ExileCore.PoEMemory;
 using ExileCore.PoEMemory.Elements;
 using System.Numerics;
@@ -66,24 +67,33 @@ namespace SyndicateHelper
             if (string.IsNullOrEmpty(goal) || goal == "None")
                 return new MemberGoal { Division = SyndicateDivision.None, IsPrimaryLeader = false };
 
-            var isLeader = goal.Contains("(Leader)");
-            var divisionName = goal.Replace(" (Leader)", "").Trim();
+            var isLeader = goal.Contains("(Leader)", StringComparison.OrdinalIgnoreCase);
+            var divisionName = goal.Replace(" (Leader)", "", StringComparison.OrdinalIgnoreCase).Trim();
 
-            if (System.Enum.TryParse(divisionName, out SyndicateDivision division))
+            if (System.Enum.TryParse(divisionName, true, out SyndicateDivision division))
                 return new MemberGoal { Division = division, IsPrimaryLeader = isLeader };
 
             return new MemberGoal { Division = SyndicateDivision.None, IsPrimaryLeader = false };
         }
 
+        private static readonly Dictionary<string, string> _memberPropMap = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Aisling"]="Aisling", ["Cameria"]="Cameria", ["Elreon"]="Elreon", ["Gravicius"]="Gravicius",
+            ["Guff"]="Guff", ["Haku"]="Haku", ["Hillock"]="Hillock", ["It That Fled"]="ItThatFled",
+            ["Janus"]="Janus", ["Jorgin"]="Jorgin", ["Korell"]="Korell", ["Leo"]="Leo",
+            ["Rin"]="Rin", ["Riker"]="Riker", ["Tora"]="Tora", ["Vagan"]="Vagan", ["Vorici"]="Vorici",
+        };
+
         public static string GetDesiredDivisionForMember(string memberName, SyndicateHelperSettings settings)
         {
             if (settings == null || string.IsNullOrWhiteSpace(memberName))
                 return "None";
-
-            var property = settings.GetType().GetProperty(memberName);
+            var key = memberName.Trim();
+            if (!_memberPropMap.TryGetValue(key, out var propName))
+                propName = key.Replace(" ", "");
+            var property = settings.GetType().GetProperty(propName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
             if (property == null)
                 return "None";
-
             var listNode = property.GetValue(settings) as ExileCore.Shared.Nodes.ListNode;
             return listNode?.Value ?? "None";
         }

@@ -93,8 +93,8 @@ namespace SyndicateHelper
                 case "RemoveNPCFromOrg": return ScoreRemoveNpc(decision);
                 case "NPCLeavesOrg": return ScoreRemoveNpc(decision);
                 case "DownrankRivalsUprankMyDivision": return SyndicateHelperConstants.ScoreDownrankRivalsUprankMyDivision;
-                case "ExecuteSafehouse": return 0;
-                default: return 0;
+                case "ExecuteSafehouse": return GetScore("ExecuteSafehouseScore", 0);
+                default: return GetScore(actionCode + "Score", 0);
             }
         }
 
@@ -164,13 +164,18 @@ namespace SyndicateHelper
                 if (string.IsNullOrWhiteSpace(trimmedPair)) continue;
 
                 var divisions = trimmedPair.Split('-');
+                if (divisions.Length == 1)
+                {
+                    // Single division token (e.g. "Fortification") is user error — ignore gracefully
+                    continue;
+                }
                 if (divisions.Length != 2) continue;
 
                 var div1Name = divisions[0].Trim();
                 var div2Name = divisions[1].Trim();
 
-                if (System.Enum.TryParse(div1Name, out SyndicateDivision div1) &&
-                    System.Enum.TryParse(div2Name, out SyndicateDivision div2))
+                if (System.Enum.TryParse(div1Name, true, out SyndicateDivision div1) &&
+                    System.Enum.TryParse(div2Name, true, out SyndicateDivision div2))
                 {
                     ruleSet.Add(new Tuple<SyndicateDivision, SyndicateDivision>(div1, div2));
                     ruleSet.Add(new Tuple<SyndicateDivision, SyndicateDivision>(div2, div1));
