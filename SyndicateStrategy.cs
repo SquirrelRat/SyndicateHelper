@@ -1,6 +1,3 @@
-// SyndicateStrategy.cs
-// Decision scoring engine for syndicate encounter choices.
-// Evaluates actions based on current board state, member goals, and configured strategy weights.
 
 using System;
 using System.Collections.Generic;
@@ -166,7 +163,6 @@ namespace SyndicateHelper
                 var divisions = trimmedPair.Split('-');
                 if (divisions.Length == 1)
                 {
-                    // Single division token (e.g. "Fortification") is user error — ignore gracefully
                     continue;
                 }
                 if (divisions.Length != 2) continue;

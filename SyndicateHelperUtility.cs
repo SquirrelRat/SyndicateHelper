@@ -1,6 +1,3 @@
-// SyndicateHelperUtility.cs
-// Shared utility classes and constants for the SyndicateHelper plugin.
-// Contains helper methods for parsing goals, drawing Bezier curves, and safe element access.
 
 using System;
 using System.Collections.Generic;

@@ -9,7 +9,6 @@ namespace SyndicateHelper
     public class SyndicateMemberState { public string Name { get; set; } public string Rank { get; set; } public SyndicateDivision Division { get; set; } public bool IsLeader { get; set; } public HashSet<string> Friends { get; set; } = new HashSet<string>(); public HashSet<string> Rivals { get; set; } = new HashSet<string>(); }
     public struct MemberGoal { public SyndicateDivision Division; public bool IsPrimaryLeader; }
 
-    
     public static class SyndicateRewardData
     {
         public static readonly Dictionary<string, Dictionary<SyndicateDivision, RewardInfo>> Rewards = new()
@@ -65,8 +64,8 @@ namespace SyndicateHelper
             },
             ["It That Fled"] = new Dictionary<SyndicateDivision, RewardInfo>
             {
-                [SyndicateDivision.Transportation] = new() { Text = "Corrupt Maps",       Tier = RewardTier.Average },
-                [SyndicateDivision.Fortification]  = new() { Text = "Breachstone Bargain",Tier = RewardTier.Worst },
+                [SyndicateDivision.Transportation] = new() { Text = "Foulborn Uniques",   Tier = RewardTier.Great },
+                [SyndicateDivision.Fortification]  = new() { Text = "Foulborn Curr.",     Tier = RewardTier.Good },
                 [SyndicateDivision.Research]       = new() { Text = "Tainted Sockets",    Tier = RewardTier.Good },
                 [SyndicateDivision.Intervention]   = new() { Text = "Breach Scarabs",     Tier = RewardTier.Good }
             },
@@ -81,7 +80,7 @@ namespace SyndicateHelper
             {
                 [SyndicateDivision.Transportation] = new() { Text = "Sulphite Scarabs",   Tier = RewardTier.Good },
                 [SyndicateDivision.Fortification]  = new() { Text = "Delve Equip.",       Tier = RewardTier.Worst },
-                [SyndicateDivision.Research]       = new() { Text = "Talisman Craft",     Tier = RewardTier.Good },
+                [SyndicateDivision.Research]       = new() { Text = "Talisman (Reg. Curr.)", Tier = RewardTier.Good },
                 [SyndicateDivision.Intervention]   = new() { Text = "Bestiary Scarabs",   Tier = RewardTier.Great }
             },
             ["Korell"] = new Dictionary<SyndicateDivision, RewardInfo>
@@ -121,16 +120,16 @@ namespace SyndicateHelper
             },
             ["Vagan"] = new Dictionary<SyndicateDivision, RewardInfo>
             {
-                [SyndicateDivision.Transportation] = new() { Text = "Harbinger Scarabs",  Tier = RewardTier.Good },
-                [SyndicateDivision.Fortification]  = new() { Text = "Incubators",         Tier = RewardTier.Worst },
-                [SyndicateDivision.Research]       = new() { Text = "Chaos/Fracture",     Tier = RewardTier.Average },
+                [SyndicateDivision.Transportation] = new() { Text = "Trarthan Scarabs",   Tier = RewardTier.Great },
+                [SyndicateDivision.Fortification]  = new() { Text = "Enshrouded Uniques", Tier = RewardTier.Great },
+                [SyndicateDivision.Research]       = new() { Text = "Fracture Craft",     Tier = RewardTier.Good },
                 [SyndicateDivision.Intervention]   = new() { Text = "Legion Scarabs",     Tier = RewardTier.Great }
             },
             ["Vorici"] = new Dictionary<SyndicateDivision, RewardInfo>
             {
-                [SyndicateDivision.Transportation] = new() { Text = "Stack of Currency",  Tier = RewardTier.Average },
-                [SyndicateDivision.Fortification]  = new() { Text = "Socket Crafts",      Tier = RewardTier.Average },
-                [SyndicateDivision.Research]       = new() { Text = "Socket Color",       Tier = RewardTier.Great },
+                [SyndicateDivision.Transportation] = new() { Text = "Stack of Currency",  Tier = RewardTier.Good },
+                [SyndicateDivision.Fortification]  = new() { Text = "Socket Bench (100x/25x)", Tier = RewardTier.Good },
+                [SyndicateDivision.Research]       = new() { Text = "Chance/Scour Bench", Tier = RewardTier.Good },
                 [SyndicateDivision.Intervention]   = new() { Text = "Harvest Scarabs",    Tier = RewardTier.Great }
             }
         };

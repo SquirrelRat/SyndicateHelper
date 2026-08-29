@@ -5,9 +5,6 @@ namespace SyndicateHelper
 {
     public static class ImGuiExtension
     {
-        /// <summary>
-        /// Creates a dropdown combobox for selecting from a list of options
-        /// </summary>
         public static string ComboBox(string label, string currentSelectedItem, List<string> objectList, out bool didChange,
             ImGuiComboFlags comboFlags = ImGuiComboFlags.HeightRegular)
         {

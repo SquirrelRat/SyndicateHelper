@@ -1,6 +1,3 @@
-// SyndicateStrategies.cs
-// Defines pre-configured strategy profiles for syndicate board optimization.
-// Each strategy specifies member placement goals and scoring preferences for different playstyles.
 
 using System.Collections.Generic;
 
@@ -21,25 +18,26 @@ namespace SyndicateHelper
         {
             new SyndicateStrategyDefinition
             {
-                Name = "3.28 Scarab Powerfarm",
+                Name = "3.29 Scarab Farm (2-2-5-5)",
                 MemberGoals = new Dictionary<string, string>
                 {
-                    { "Cameria", "Intervention (Leader)" }, { "Rin", "Intervention" }, { "Vagan", "Intervention" },
-                    { "Gravicius", "Intervention" }, { "Tora", "Fortification" }, { "Hillock", "Fortification" },
-                    { "Guff", "Research" }, { "Aisling", "Fortification (Leader)" },
-                    { "It That Fled", "Transportation" }, { "Leo", "Transportation" }, { "Janus", "Transportation" },
-                    { "Jorgin", "Research" }, { "Korell", "Research" },
-                    { "Riker", "Research" }
+                    { "It That Fled", "Transportation (Leader)" }, { "Gravicius", "Transportation" },
+                    { "Vorici", "Research (Leader)" }, { "Aisling", "Research" },
+                    { "Vagan", "Intervention" }, { "Cameria", "Intervention" }, { "Rin", "Intervention" },
+                    { "Haku", "Intervention" }, { "Leo", "Intervention" },
+                    { "Hillock", "Fortification" }, { "Tora", "Fortification" }
                 },
                 ScoreOverrides = new Dictionary<string, int>
                 {
-                    { "GainItemScarabScore", 100 },
+                    { "GainItemScarabScore", 70 },
                     { "PromoteNPCScore", 50 },
-                    { "ExecuteScore", 40 },
-                    { "GainItemAnyUniqueScore", 50 }
+                    { "ExecuteScore", 45 },
+                    { "GainItemAnyUniqueScore", 60 },
+                    { "GainIntelligenceScore", 15 },
+                    { "StealRanksScore", 60 }
                 },
-                OpposedDivisions = "Fortification",
-                AlliedDivisions = ""
+                OpposedDivisions = "Transportation-Research",
+                AlliedDivisions = "Intervention-Fortification"
             },
             new SyndicateStrategyDefinition
             {

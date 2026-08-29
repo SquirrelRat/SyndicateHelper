@@ -1,6 +1,3 @@
-// SyndicateHelper.cs
-// Main plugin class for the SyndicateHelper ExileAPI plugin.
-// Provides UI overlays, decision scoring, and strategy guidance for the Betrayal/Syndicate mechanic in Path of Exile.
 
 using ExileCore;
 using ExileCore.PoEMemory;
@@ -122,7 +119,6 @@ namespace SyndicateHelper
             if (float.IsNaN(rect.X) || float.IsNaN(rect.Y) || float.IsNaN(rect.Width) || float.IsNaN(rect.Height)) return false;
             if (float.IsInfinity(rect.X) || float.IsInfinity(rect.Y) || float.IsInfinity(rect.Width) || float.IsInfinity(rect.Height)) return false;
 
-            // Use viewport-relative bounds — HUD runs on ultrawide/negative offsets, so be permissive.
             const float minBound = -5000f;
             const float maxBound = 12000f;
             
@@ -180,7 +176,6 @@ namespace SyndicateHelper
                                     lowerText.Contains("safehouse") ||
                                     lowerText.Contains("assault") ||
                                     lowerText.Contains("attack");
-                // "enter" only counts when paired with safehouse/syndicate to avoid Enter Hideout false positives
                 if (!isRaidButton && lowerText.Contains("enter") && (lowerText.Contains("safehouse") || lowerText.Contains("syndicate")))
                     isRaidButton = true;
 
@@ -514,7 +509,6 @@ namespace SyndicateHelper
                 return null;
             }
 
-
             lock (_drawLock)
             {
                 _linksToDraw.Clear();
@@ -609,7 +603,6 @@ namespace SyndicateHelper
                 var advisorBottomY = RenderStrategyAdvisorImGui(betrayalWindow);
                 var backgroundColor = new Color((byte)0, (byte)0, (byte)0, (byte)Settings.BackgroundAlpha.Value);
 
-            // Snapshot draw lists under lock — avoids Tick/Race "Collection was modified"
             List<Tuple<RectangleF, Color>> rectsSnap; List<Tuple<RectangleF, RectangleF, Color>> linksSnap;
             List<CachedText> rewardsSnap; List<CachedText> scoresSnap;
             List<EvaluatedChoice> choicesSnap;
@@ -631,14 +624,12 @@ namespace SyndicateHelper
             {
                 foreach (var rect in rectsSnap)
                 {
-                    // Validate rectangle before drawing to prevent artifacts at (0,0)
                     if (IsValidRect(rect.Item1))
                     {
                         Graphics.DrawFrame(rect.Item1, rect.Item2, Settings.FrameThickness.Value);
                     }
                 }
 
-                // Draw safehouse button highlight if available
                 if (_availableSafehouseDivision != SyndicateDivision.None && IsValidRect(_safehouseButtonRect))
                 {
                     Graphics.DrawFrame(_safehouseButtonRect, Settings.GoodChoiceColor.Value, Settings.FrameThickness.Value + 1);
@@ -683,7 +674,6 @@ namespace SyndicateHelper
                 {
                     foreach (var link in linksSnap)
                     {
-                        // Validate both rectangles before drawing curve
                         if (!IsValidRect(link.Item1) || !IsValidRect(link.Item2))
                             continue;
 
@@ -876,8 +866,6 @@ namespace SyndicateHelper
             }
         }
 
-
-        
         private void UpdateBoardAndPrisonState(SyndicatePanel betrayalWindow)
         {
             var newBoardState = new Dictionary<string, SyndicateMemberState>();
@@ -907,7 +895,6 @@ namespace SyndicateHelper
 
                 var rankName = memberState.Rank?.Name ?? string.Empty;
 
-                // Ghost None bug: skip unassigned members from board (Division.None / no rank) — they are bench, not board.
                 bool onBoard = division != SyndicateDivision.None || !string.IsNullOrWhiteSpace(rankName);
                 if (!onBoard) continue;
 
@@ -923,7 +910,6 @@ namespace SyndicateHelper
                 if (IsMemberImprisoned(memberState.UIElement)) prisonCount++;
             }
 
-            // Fallback: also seed links from memory Relations list (covers off-screen/visible divergence)
             foreach (var memberState in betrayalWindow.SyndicateStates)
             {
                 if (memberState?.Target == null || memberState.Relations == null) continue;
@@ -933,8 +919,6 @@ namespace SyndicateHelper
                 {
                     var other = rel?.Target?.Name;
                     if (string.IsNullOrWhiteSpace(other) || !newBoardState.ContainsKey(other)) continue;
-                    // Without explicit Trusted/Rival enum in memory, treat as generic link for now;
-                    // prefer Friends bucket so scoring still sees connection (conservative).
                     if (!s.Friends.Contains(other) && !s.Rivals.Contains(other))
                         s.Friends.Add(other);
                 }
@@ -983,7 +967,6 @@ namespace SyndicateHelper
             {
                 var cur = stack.Pop();
                 if (cur == null) continue;
-                // Avoid cycles in element graph
                 try { if (!visited.Add((IntPtr)cur.GetHashCode())) continue; } catch { }
                 var text = SyndicateHelperUtility.GetElementTextSafely(cur);
                 if (!string.IsNullOrEmpty(text) && (text.Contains("Turn Left", StringComparison.OrdinalIgnoreCase) || text.Contains("Turns Left", StringComparison.OrdinalIgnoreCase)))
@@ -1016,7 +999,6 @@ namespace SyndicateHelper
             
             var windowFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysAutoResize;
             
-            // Minimized state — draw tiny bar so the existing click handler can restore
             if (_advisorMinimized)
             {
                 windowFlags |= ImGuiWindowFlags.NoTitleBar;
@@ -1029,7 +1011,6 @@ namespace SyndicateHelper
                 }
                 ImGui.TextDisabled("Syndicate Helper  [click - to expand]");
                 _minimizeButtonRect = new RectangleF(ImGui.GetWindowPos().X, ImGui.GetWindowPos().Y, ImGui.GetWindowSize().X, ImGui.GetWindowSize().Y);
-                // keep other hit rects empty while minimized
                 _leftButtonRect = RectangleF.Empty;
                 _rightButtonRect = RectangleF.Empty;
                 ImGui.PopStyleColor(9);
@@ -1271,7 +1252,6 @@ namespace SyndicateHelper
         private bool ChoiceAccomplishesGoal(string choiceText, string goalText, string memberInDecision, Dictionary<string, SyndicateMemberState> boardState)
         {
             if (string.IsNullOrEmpty(choiceText) || string.IsNullOrEmpty(goalText)) return false;
-            // Rank up: goalText is "Rank up {Member} in {Division}" — member may contain spaces (It That Fled)
             if (goalText.StartsWith("Rank up ", StringComparison.OrdinalIgnoreCase))
             {
                 var m = Regex.Match(goalText, @"^Rank up\s+(.+?)\s+in\s+", RegexOptions.IgnoreCase);
@@ -1306,8 +1286,6 @@ namespace SyndicateHelper
             return false;
         }
 
-
-
         private void AddDebug(string message)
         {
             if (!Settings.EnableDebugDrawing.Value) return;
@@ -1318,8 +1296,6 @@ namespace SyndicateHelper
             }
             _debugMessages.Add(message);
         }
-
-        // WrapText removed — unused (was splitting on ' ' with per-word MeasureText)
 
         private List<string> _LegacyWrapText(string text, float maxWidth, int fontSize)
         {
@@ -1342,7 +1318,6 @@ namespace SyndicateHelper
             var text = SyndicateHelperUtility.GetElementTextSafely(currentElement);
             if (!string.IsNullOrEmpty(text))
             {
-                // Match against "Aisling (Captain)" style — longest name first avoids Rin substring false positives
                 string best = null;
                 foreach (var name in SyndicateMemberNames.OrderByDescending(n => n.Length))
                 {
@@ -1376,7 +1351,6 @@ namespace SyndicateHelper
             var t = SyndicateHelperUtility.GetElementTextSafely(searchRoot);
             if (!string.IsNullOrEmpty(t))
             {
-                // Longest first prevents Rin/Vagan substring collisions; case-insensitive
                 foreach (var name in SyndicateMemberNames.OrderByDescending(n => n.Length))
                 {
                     if (t.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)

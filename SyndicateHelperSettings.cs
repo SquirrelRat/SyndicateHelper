@@ -1,6 +1,3 @@
-// SyndicateHelperSettings.cs
-// Configuration settings for the SyndicateHelper plugin.
-// Defines all user-configurable options including strategy profiles, visual styles, action scores, and member goals.
 
 using ExileCore.Shared.Attributes;
 using ExileCore.Shared.Interfaces;
@@ -220,7 +217,7 @@ namespace SyndicateHelper
             var profileOptions = SyndicateStrategies.Strategies.Select(s => s.Name).ToList();
             profileOptions.Insert(0, "Custom");
             StrategyProfile.Values = profileOptions;
-            StrategyProfile.Value = "3.28 Scarab Powerfarm";
+            StrategyProfile.Value = "3.29 Scarab Farm (2-2-5-5)";
 
             var allMembers = new List<ListNode>
             {
