@@ -600,12 +600,18 @@ namespace SyndicateHelper
                 #pragma warning restore CS0618
                 if (betrayalWindow == null || !betrayalWindow.IsVisible) return;
 
-                var advisorBottomY = RenderStrategyAdvisorImGui(betrayalWindow);
                 var backgroundColor = new Color((byte)0, (byte)0, (byte)0, (byte)Settings.BackgroundAlpha.Value);
+                var advisorBottomY = RenderStrategyAdvisorImGui(betrayalWindow);
+
+            if (_lastDecision != null)
+            {
+                ProcessChoiceHighlights();
+            }
 
             List<Tuple<RectangleF, Color>> rectsSnap; List<Tuple<RectangleF, RectangleF, Color>> linksSnap;
             List<CachedText> rewardsSnap; List<CachedText> scoresSnap;
             List<EvaluatedChoice> choicesSnap;
+            HashSet<long> highlightedSnap;
             lock (_drawLock)
             {
                 rectsSnap = new List<Tuple<RectangleF, Color>>(_rectanglesToDraw);
@@ -613,11 +619,7 @@ namespace SyndicateHelper
                 rewardsSnap = new List<CachedText>(_cachedRewardText);
                 scoresSnap = new List<CachedText>(_cachedChoiceScores);
                 choicesSnap = new List<EvaluatedChoice>(_lastChoices);
-            }
-
-            if (_lastDecision != null)
-            {
-                ProcessChoiceHighlights();
+                highlightedSnap = new HashSet<long>(_highlightedButtonAddresses);
             }
 
             if (Settings.ShowButtons.Value)
@@ -654,10 +656,10 @@ namespace SyndicateHelper
                         var bestButtonRect = bestChoice.Button.GetClientRectCache;
                         if (IsValidRect(bestButtonRect))
                         {
-                            var scoreColor = _highlightedButtonAddresses.Contains(bestChoice.Button.Address)
+                            var scoreColor = highlightedSnap.Contains(bestChoice.Button.Address)
                                 ? Settings.GoalCompletionColor.Value
                                 : bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
-                                  bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
+                                   bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
 
                             SyndicateHelperUtility.DrawSnakeEffect(
                                 bestButtonRect,
@@ -784,13 +786,18 @@ namespace SyndicateHelper
         {
             if (_lastDecision == null || _lastChoices.Count == 0) return;
 
-            _highlightedButtonAddresses.Clear();
+            List<RectangleF> goalRectsCopy;
+            lock (_drawLock)
+            {
+                _highlightedButtonAddresses.Clear();
+                goalRectsCopy = new List<RectangleF>(_goalRects);
+            }
 
             var sortedGoals = _strategicGoals.OrderBy(g => g.Priority).ToList();
-            for (int i = 0; i < sortedGoals.Count && i < _goalRects.Count; i++)
+            for (int i = 0; i < sortedGoals.Count && i < goalRectsCopy.Count; i++)
             {
                 var goal = sortedGoals[i];
-                var goalRect = _goalRects[i];
+                var goalRect = goalRectsCopy[i];
 
                 bool specialCompletes = ChoiceAccomplishesGoal(_lastDecision.SpecialText, goal.Text, _lastDecision.MemberName, _boardState);
                 bool interrogateCompletes = ChoiceAccomplishesGoal("Interrogate", goal.Text, _lastDecision.MemberName, _boardState);
@@ -802,15 +809,21 @@ namespace SyndicateHelper
                     var buttonRect = buttonToHighlight.GetClientRectCache;
                     if (IsValidRect(goalRect) && IsValidRect(buttonRect))
                     {
-                        _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(goalRect, Settings.GoalCompletionColor.Value));
-                        _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, Settings.GoalCompletionColor.Value));
-                        _highlightedButtonAddresses.Add(buttonToHighlight.Address);
+                        lock (_drawLock)
+                        {
+                            _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(goalRect, Settings.GoalCompletionColor.Value));
+                            _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, Settings.GoalCompletionColor.Value));
+                            _highlightedButtonAddresses.Add(buttonToHighlight.Address);
+                        }
                     }
                 }
             }
 
             var bestChoice = _lastChoices.OrderByDescending(c => c.Score).FirstOrDefault();
             if (bestChoice.Button == null) return;
+
+            HashSet<long> highlightedCopy;
+            lock (_drawLock) { highlightedCopy = new HashSet<long>(_highlightedButtonAddresses); }
 
             foreach (var choice in _lastChoices)
             {
@@ -824,44 +837,28 @@ namespace SyndicateHelper
                     buttonRect.Right + SyndicateHelperConstants.ScoreTextOffsetX,
                     buttonRect.Center.Y - textSize.Y / 2 - SyndicateHelperConstants.ScoreTextOffsetY);
 
-                if (_highlightedButtonAddresses.Contains(choice.Button.Address))
+                if (highlightedCopy.Contains(choice.Button.Address))
                 {
-                    _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = Settings.GoalCompletionColor.Value });
+                    lock (_drawLock)
+                        _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = Settings.GoalCompletionColor.Value });
                     continue;
                 }
 
                 var scoreColor = choice.Score > 0 ? Settings.GoodChoiceColor.Value :
                                  choice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
 
-                _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = scoreColor });
+                lock (_drawLock)
+                    _cachedChoiceScores.Add(new CachedText { Text = scoreText, Size = textSize, Position = textPos, Color = scoreColor });
 
                 if (choice.Score == bestChoice.Score)
                 {
-                    _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, scoreColor));
+                    lock (_drawLock)
+                        _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, scoreColor));
                 }
                 else if (choice.Score < 0)
                 {
-                    _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, Settings.BadChoiceColor.Value));
-                }
-            }
-
-            if (Settings.EnableAnimations.Value && IsValidButton(bestChoice.Button))
-            {
-                var bestButtonRect = bestChoice.Button.GetClientRectCache;
-                if (IsValidRect(bestButtonRect))
-                {
-                    var scoreColor = _highlightedButtonAddresses.Contains(bestChoice.Button.Address)
-                        ? Settings.GoalCompletionColor.Value
-                        : bestChoice.Score > 0 ? Settings.GoodChoiceColor.Value :
-                          bestChoice.Score == 0 ? Settings.NeutralChoiceColor.Value : Settings.BadChoiceColor.Value;
-
-                    SyndicateHelperUtility.DrawSnakeEffect(
-                        bestButtonRect,
-                        scoreColor,
-                        Settings.AnimationSpeed.Value,
-                        Settings.AnimationIntensity.Value,
-                        Graphics.DrawBox
-                    );
+                    lock (_drawLock)
+                        _rectanglesToDraw.Add(new Tuple<RectangleF, Color>(buttonRect, Settings.BadChoiceColor.Value));
                 }
             }
         }
@@ -1060,7 +1057,7 @@ namespace SyndicateHelper
                 ImGui.Separator();
             }
             
-            _goalRects.Clear();
+            lock (_drawLock) _goalRects.Clear();
             
             foreach (var priority in new[] { GoalPriority.Critical, GoalPriority.Major, GoalPriority.Minor, GoalPriority.Optimal })
             {
@@ -1098,7 +1095,7 @@ namespace SyndicateHelper
                         var itemMin = ImGui.GetItemRectMin();
                         var itemMax = ImGui.GetItemRectMax();
                         var cardRect = new RectangleF(itemMin.X, itemMin.Y, itemMax.X - itemMin.X, itemMax.Y - itemMin.Y);
-                        _goalRects.Add(cardRect);
+                        lock (_drawLock) _goalRects.Add(cardRect);
                         
                         if (_lastDecision != null)
                         {
@@ -1108,7 +1105,7 @@ namespace SyndicateHelper
                             var buttonToLink = specialCompletes ? _lastDecision.SpecialButton : (interrogateCompletes ? _lastDecision.InterrogateButton : null);
                             if (buttonToLink != null)
                             {
-                                _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(cardRect, buttonToLink.GetClientRectCache, Settings.GoalCompletionColor.Value));
+                                lock (_drawLock) _linksToDraw.Add(new Tuple<RectangleF, RectangleF, Color>(cardRect, buttonToLink.GetClientRectCache, Settings.GoalCompletionColor.Value));
                             }
                         }
                         
